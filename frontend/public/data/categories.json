@@ -1,0 +1,44 @@
+{
+  "categories": [
+    {
+      "id": 1,
+      "name": "food"
+    },
+    {
+      "id": 2,
+      "name": "utilities"
+    },
+    {
+      "id": 3,
+      "name": "bills"
+    },
+    {
+      "id": 4,
+      "name": "shopping"
+    },
+    {
+      "id": 5,
+      "name": "salary"
+    },
+    {
+      "id": 6,
+      "name": "entertainment"
+    },
+    {
+      "id": 7,
+      "name": "transport"
+    },
+    {
+      "id": 8,
+      "name": "rent"
+    },
+    {
+      "id": 9,
+      "name": "health"
+    },
+    {
+      "id": 10,
+      "name": "other"
+    }
+  ]
+}

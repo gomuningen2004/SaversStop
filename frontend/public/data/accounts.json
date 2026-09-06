@@ -1,0 +1,36 @@
+{
+  "accounts": [
+    {
+      "id": 1,
+      "name": "HDFC Bank",
+      "type": "bank",
+      "classification": "asset",
+      "balance": 112486.95,
+      "active": true
+    },
+    {
+      "id": 2,
+      "name": "SBI Bank",
+      "type": "bank",
+      "classification": "asset",
+      "balance": 1889.5,
+      "active": true
+    },
+    {
+      "id": 3,
+      "name": "Axis Bank",
+      "type": "bank",
+      "classification": "asset",
+      "balance": 6888.1,
+      "active": true
+    },
+    {
+      "id": 4,
+      "name": "Kotak Bank",
+      "type": "bank",
+      "classification": "asset",
+      "balance": 3423,
+      "active": true
+    }
+  ]
+}

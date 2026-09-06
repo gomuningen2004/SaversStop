@@ -1,0 +1,40 @@
+{
+  "budgets": [
+    {
+      "id": 1,
+      "month": "2026-09",
+      "categoryId": 1,
+      "amount": 8000
+    },
+    {
+      "id": 2,
+      "month": "2026-09",
+      "categoryId": 4,
+      "amount": 5000
+    },
+    {
+      "id": 3,
+      "month": "2026-09",
+      "categoryId": 7,
+      "amount": 4000
+    },
+    {
+      "id": 4,
+      "month": "2026-09",
+      "categoryId": 6,
+      "amount": 2500
+    },
+    {
+      "id": 5,
+      "month": "2026-09",
+      "categoryId": 2,
+      "amount": 3000
+    },
+    {
+      "id": 6,
+      "month": "2026-09",
+      "categoryId": 3,
+      "amount": 3000
+    }
+  ]
+}

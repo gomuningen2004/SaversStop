@@ -1,0 +1,24 @@
+{
+  "goals": [
+    {
+      "id": 1,
+      "name": "New Laptop",
+      "targetAmount": 80000,
+      "savedAmount": 30000,
+      "monthlyContribution": 10000,
+      "account": "HDFC Bank",
+      "targetDate": "2027-06-30",
+      "status": "active"
+    },
+    {
+      "id": 2,
+      "name": "Emergency Fund",
+      "targetAmount": 100000,
+      "savedAmount": 20000,
+      "monthlyContribution": 5000,
+      "account": "SBI Bank",
+      "targetDate": "2027-12-31",
+      "status": "active"
+    }
+  ]
+}

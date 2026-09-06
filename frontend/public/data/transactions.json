@@ -1,0 +1,94 @@
+{
+  "transactions": [
+    {
+      "id": 1,
+      "date": "2026-08-30",
+      "reason": "Payment from ABC Technologies",
+      "categoryId": 5,
+      "account": "HDFC Bank",
+      "amount": 45000.0,
+      "type": "received"
+    },
+    {
+      "id": 2,
+      "date": "2026-08-29",
+      "reason": "Amazon purchase",
+      "categoryId": 4,
+      "account": "HDFC Bank",
+      "amount": 2499.0,
+      "type": "sent"
+    },
+    {
+      "id": 3,
+      "date": "2026-08-27",
+      "reason": "Swiggy order",
+      "categoryId": 1,
+      "account": "SBI Bank",
+      "amount": 685.5,
+      "type": "sent"
+    },
+    {
+      "id": 4,
+      "date": "2026-08-25",
+      "reason": "Salary",
+      "categoryId": 5,
+      "account": "HDFC Bank",
+      "amount": 55000.0,
+      "type": "received"
+    },
+    {
+      "id": 5,
+      "date": "2026-08-23",
+      "reason": "Netflix subscription",
+      "categoryId": 6,
+      "account": "Axis Bank",
+      "amount": 649.0,
+      "type": "sent"
+    },
+    {
+      "id": 6,
+      "date": "2026-08-20",
+      "reason": "Money received from John Doe",
+      "categoryId": 10,
+      "account": "Kotak Bank",
+      "amount": 2500.0,
+      "type": "received"
+    },
+    {
+      "id": 7,
+      "date": "2026-08-18",
+      "reason": "Electricity bill",
+      "categoryId": 2,
+      "account": "HDFC Bank",
+      "amount": 1842.75,
+      "type": "sent"
+    },
+    {
+      "id": 8,
+      "date": "2026-08-15",
+      "reason": "Zomato order",
+      "categoryId": 1,
+      "account": "SBI Bank",
+      "amount": 923.4,
+      "type": "sent"
+    },
+    {
+      "id": 9,
+      "date": "2026-09-05",
+      "categoryId": 10,
+      "account": "HDFC Bank",
+      "amount": 10000.0,
+      "type": "sent",
+      "transferId": 1
+    },
+    {
+      "id": 10,
+      "date": "2026-09-05",
+      "categoryId": 10,
+      "account": "SBI Bank",
+      "amount": 10000.0,
+      "type": "received",
+      "transferId": 1
+    }
+  ]
+}
