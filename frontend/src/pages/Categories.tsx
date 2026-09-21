@@ -56,11 +56,14 @@ function Categories() {
   /*
    * Load transactions, accounts and categories.
    */
+
   useEffect(() => {
+    const API_URL = 'http://127.0.0.1:8000';
+
     Promise.all([
-      fetch('/data/transactions.json'),
-      fetch('/data/accounts.json'),
-      fetch('/data/categories.json'),
+      fetch(`${API_URL}/api/transactions`),
+      fetch(`${API_URL}/api/accounts`),
+      fetch(`${API_URL}/api/categories`),
     ])
       .then(
         async ([
@@ -85,8 +88,55 @@ function Categories() {
           const categoriesData =
             (await categoriesResponse.json()) as CategoriesResponse;
 
-          setTransactions(transactionsData.transactions);
-          setAccounts(accountsData.accounts);
+          /*
+           * Convert backend snake_case transaction fields
+           * into the frontend camelCase Transaction type.
+           */
+          const normalizedTransactions: Transaction[] =
+            transactionsData.transactions.map(
+              (transaction: {
+                id: string;
+                transaction_date: string;
+                reason?: string | null;
+                category_id: string | null;
+                account_id: string;
+                amount: number | string;
+                type: 'sent' | 'received';
+                transfer_id?: string | null;
+              }) => ({
+                id: transaction.id,
+                transactionDate: transaction.transaction_date,
+                reason: transaction.reason,
+                categoryId: transaction.category_id ?? '',
+                accountId: transaction.account_id,
+                amount: Number(transaction.amount),
+                type: transaction.type,
+                transferId: transaction.transfer_id ?? null,
+              }),
+            );
+
+          /*
+           * Convert backend snake_case account fields
+           * into the frontend camelCase Account type.
+           */
+          const normalizedAccounts: Account[] = accountsData.accounts.map(
+            (account: {
+              id: string;
+              name: string;
+              account_type_id: string;
+              current_balance: number | string;
+              active: boolean;
+            }) => ({
+              id: account.id,
+              name: account.name,
+              accountTypeId: account.account_type_id,
+              currentBalance: Number(account.current_balance),
+              active: account.active,
+            }),
+          );
+
+          setTransactions(normalizedTransactions);
+          setAccounts(normalizedAccounts);
           setCategories(categoriesData.categories);
 
           setLoading(false);
@@ -202,33 +252,49 @@ function Categories() {
    */
   const spendingTransactions = useMemo(() => {
     return transactions.filter((transaction) => {
+      /*
+       * Only outgoing transactions are spending.
+       */
       if (transaction.type !== 'sent') {
         return false;
       }
 
-      if (transaction.transferId !== undefined) {
+      /*
+       * Any non-null transferId means this is
+       * one side of a self-transfer.
+       */
+      if (transaction.transferId !== null) {
         return false;
       }
 
+      /*
+       * Filter by account UUID.
+       */
       if (
         selectedAccount !== 'all' &&
-        transaction.account !== selectedAccount
+        transaction.accountId !== selectedAccount
       ) {
         return false;
       }
 
+      /*
+       * Filter by category UUID.
+       */
       if (
         selectedCategory !== 'all' &&
-        transaction.categoryId !== Number(selectedCategory)
+        transaction.categoryId !== selectedCategory
       ) {
         return false;
       }
 
-      if (dateRange.from && transaction.date < dateRange.from) {
+      /*
+       * Filter by date.
+       */
+      if (dateRange.from && transaction.transactionDate < dateRange.from) {
         return false;
       }
 
-      if (dateRange.to && transaction.date > dateRange.to) {
+      if (dateRange.to && transaction.transactionDate > dateRange.to) {
         return false;
       }
 
@@ -240,7 +306,7 @@ function Categories() {
    * Group spending by category.
    */
   const categorySpending = useMemo(() => {
-    const totals: Record<number, number> = {};
+    const totals: Record<string, number> = {};
 
     spendingTransactions.forEach((transaction) => {
       if (!totals[transaction.categoryId]) {
@@ -369,11 +435,13 @@ function Categories() {
             >
               <option value="all">All Accounts</option>
 
-              {accounts.map((account) => (
-                <option key={account.id} value={account.name}>
-                  {account.name}
-                </option>
-              ))}
+              {accounts
+                .filter((account) => account.active)
+                .map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
             </select>
           </div>
 
@@ -395,11 +463,13 @@ function Categories() {
             >
               <option value="all">All Categories</option>
 
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {formatCategoryName(category.name)}
-                </option>
-              ))}
+              {categories
+                .filter((category) => category.active)
+                .map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {formatCategoryName(category.name)}
+                  </option>
+                ))}
             </select>
           </div>
         </div>

@@ -2,9 +2,23 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import type { Account, AccountsResponse, Goal, GoalsResponse } from '../types';
+import type { Goal } from '../types';
 
 type ModalMode = 'add' | 'edit';
+
+type RawGoal = {
+  id: string;
+  name: string;
+  target_amount: number;
+  saved_amount: number;
+  monthly_contribution: number;
+  target_date: string;
+  status: 'active' | 'completed';
+};
+
+type RawGoalsResponse = {
+  goals: RawGoal[];
+};
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-IN', {
@@ -33,7 +47,6 @@ function formatDate(date: string) {
 
 function ManageGoals() {
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,7 +58,7 @@ function ManageGoals() {
 
   const [modalMode, setModalMode] = useState<ModalMode>('add');
 
-  const [editingGoalId, setEditingGoalId] = useState<number | null>(null);
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
 
   /*
    * Form fields
@@ -53,40 +66,48 @@ function ManageGoals() {
   const [goalName, setGoalName] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
   const [monthlyContribution, setMonthlyContribution] = useState('');
-  const [account, setAccount] = useState('');
   const [targetDate, setTargetDate] = useState('');
 
   const [goalError, setGoalError] = useState('');
 
   /*
-   * Load goals and accounts.
+   * Load goals.
    */
   useEffect(() => {
-    Promise.all([fetch('/data/goals.json'), fetch('/data/accounts.json')])
-      .then(async ([goalsResponse, accountsResponse]) => {
-        if (!goalsResponse.ok || !accountsResponse.ok) {
-          throw new Error('Failed to load data');
+    const loadGoals = async () => {
+      try {
+        const response = await fetch('/data/goals.json');
+
+        if (!response.ok) {
+          throw new Error('Failed to load goals');
         }
 
-        const goalsData = (await goalsResponse.json()) as GoalsResponse;
+        const goalsData = (await response.json()) as RawGoalsResponse;
 
-        const accountsData =
-          (await accountsResponse.json()) as AccountsResponse;
+        /*
+         * Convert JSON snake_case fields
+         * into frontend camelCase fields.
+         */
+        const normalizedGoals: Goal[] = (goalsData.goals ?? []).map((goal) => ({
+          id: goal.id,
+          name: goal.name,
+          targetAmount: Number(goal.target_amount),
+          savedAmount: Number(goal.saved_amount),
+          monthlyContribution: Number(goal.monthly_contribution),
+          targetDate: goal.target_date,
+          status: goal.status,
+        }));
 
-        setGoals(goalsData.goals);
-        setAccounts(accountsData.accounts);
-
-        if (accountsData.accounts.length > 0) {
-          setAccount(accountsData.accounts[0].name);
-        }
-
-        setLoading(false);
-      })
-      .catch((err) => {
+        setGoals(normalizedGoals);
+      } catch (err) {
         console.error(err);
         setError('Unable to load goals.');
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+
+    loadGoals();
   }, []);
 
   /*
@@ -99,14 +120,8 @@ function ManageGoals() {
     setGoalName('');
     setTargetAmount('');
     setMonthlyContribution('');
-
-    if (accounts.length > 0) {
-      setAccount(accounts[0].name);
-    } else {
-      setAccount('');
-    }
-
     setTargetDate('');
+
     setGoalError('');
     setShowGoalModal(true);
   }
@@ -121,7 +136,6 @@ function ManageGoals() {
     setGoalName(goal.name);
     setTargetAmount(String(goal.targetAmount));
     setMonthlyContribution(String(goal.monthlyContribution));
-    setAccount(goal.account);
     setTargetDate(goal.targetDate);
 
     setGoalError('');
@@ -138,7 +152,6 @@ function ManageGoals() {
     setGoalName('');
     setTargetAmount('');
     setMonthlyContribution('');
-    setAccount('');
     setTargetDate('');
 
     setGoalError('');
@@ -160,19 +173,19 @@ function ManageGoals() {
 
     if (!trimmedName) {
       setGoalError('Please enter a goal name.');
-
       return;
     }
 
-    if (!numericTargetAmount || numericTargetAmount <= 0) {
+    if (!Number.isFinite(numericTargetAmount) || numericTargetAmount <= 0) {
       setGoalError('Please enter a valid target amount.');
-
       return;
     }
 
-    if (!numericMonthlyContribution || numericMonthlyContribution <= 0) {
+    if (
+      !Number.isFinite(numericMonthlyContribution) ||
+      numericMonthlyContribution <= 0
+    ) {
       setGoalError('Please enter a valid monthly contribution.');
-
       return;
     }
 
@@ -180,24 +193,16 @@ function ManageGoals() {
       setGoalError(
         'Monthly contribution cannot be greater than the target amount.',
       );
-
-      return;
-    }
-
-    if (!account) {
-      setGoalError('Please select an account.');
-
       return;
     }
 
     if (!targetDate) {
       setGoalError('Please select a target date.');
-
       return;
     }
 
     /*
-     * Target date must be in the future.
+     * Target date must be today or in the future.
      */
     const selectedDate = new Date(`${targetDate}T00:00:00`);
 
@@ -207,7 +212,6 @@ function ManageGoals() {
 
     if (selectedDate < today) {
       setGoalError('Target date must be today or a future date.');
-
       return;
     }
 
@@ -216,21 +220,12 @@ function ManageGoals() {
      */
     if (modalMode === 'add') {
       const newGoal: Goal = {
-        id:
-          goals.length > 0 ? Math.max(...goals.map((goal) => goal.id)) + 1 : 1,
-
+        id: crypto.randomUUID(),
         name: trimmedName,
-
         targetAmount: numericTargetAmount,
-
         savedAmount: 0,
-
         monthlyContribution: numericMonthlyContribution,
-
-        account,
-
         targetDate,
-
         status: 'active',
       };
 
@@ -253,6 +248,10 @@ function ManageGoals() {
 
           /*
            * Keep the amount already saved.
+           *
+           * If the target is reduced below the
+           * current saved amount, cap savedAmount
+           * at the new target.
            */
           const savedAmount = Math.min(goal.savedAmount, numericTargetAmount);
 
@@ -262,7 +261,6 @@ function ManageGoals() {
             targetAmount: numericTargetAmount,
             savedAmount,
             monthlyContribution: numericMonthlyContribution,
-            account,
             targetDate,
             status: savedAmount >= numericTargetAmount ? 'completed' : 'active',
           };
@@ -377,9 +375,11 @@ function ManageGoals() {
                         {goal.name}
                       </p>
 
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        {goal.account}
-                      </p>
+                      {goal.status === 'completed' && (
+                        <p className="mt-1 text-xs font-medium text-slate-500">
+                          Completed
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex shrink-0 items-center gap-0.5">
@@ -543,32 +543,6 @@ function ManageGoals() {
                     placeholder="80000"
                     className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
                   />
-                </div>
-
-                {/* ACCOUNT */}
-
-                <div>
-                  <label
-                    htmlFor="goal-account"
-                    className="mb-2 block text-sm font-medium text-slate-700"
-                  >
-                    Account
-                  </label>
-
-                  <select
-                    id="goal-account"
-                    value={account}
-                    onChange={(event) => setAccount(event.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                  >
-                    <option value="">Select account</option>
-
-                    {accounts.map((item) => (
-                      <option key={item.id} value={item.name}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
                 </div>
 
                 {/* MONTHLY CONTRIBUTION */}

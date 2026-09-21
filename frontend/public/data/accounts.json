@@ -1,35 +1,31 @@
 {
   "accounts": [
     {
-      "id": 1,
+      "id": "b0000000-0000-0000-0000-000000000001",
       "name": "HDFC Bank",
-      "type": "bank",
-      "classification": "asset",
-      "balance": 112486.95,
+      "account_type_id": "a0000000-0000-0000-0000-000000000001",
+      "current_balance": 112486.95,
       "active": true
     },
     {
-      "id": 2,
+      "id": "b0000000-0000-0000-0000-000000000002",
       "name": "SBI Bank",
-      "type": "bank",
-      "classification": "asset",
-      "balance": 1889.5,
+      "account_type_id": "a0000000-0000-0000-0000-000000000001",
+      "current_balance": 1889.5,
       "active": true
     },
     {
-      "id": 3,
+      "id": "b0000000-0000-0000-0000-000000000003",
       "name": "Axis Bank",
-      "type": "bank",
-      "classification": "asset",
-      "balance": 6888.1,
+      "account_type_id": "a0000000-0000-0000-0000-000000000001",
+      "current_balance": 6888.1,
       "active": true
     },
     {
-      "id": 4,
+      "id": "b0000000-0000-0000-0000-000000000004",
       "name": "Kotak Bank",
-      "type": "bank",
-      "classification": "asset",
-      "balance": 3423,
+      "account_type_id": "a0000000-0000-0000-0000-000000000001",
+      "current_balance": 3423,
       "active": true
     }
   ]

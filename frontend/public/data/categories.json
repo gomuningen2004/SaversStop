@@ -1,44 +1,54 @@
 {
   "categories": [
     {
-      "id": 1,
-      "name": "food"
+      "id": "c0000000-0000-0000-0000-000000000001",
+      "name": "food",
+      "active": true
     },
     {
-      "id": 2,
-      "name": "utilities"
+      "id": "c0000000-0000-0000-0000-000000000002",
+      "name": "utilities",
+      "active": true
     },
     {
-      "id": 3,
-      "name": "bills"
+      "id": "c0000000-0000-0000-0000-000000000003",
+      "name": "bills",
+      "active": true
     },
     {
-      "id": 4,
-      "name": "shopping"
+      "id": "c0000000-0000-0000-0000-000000000004",
+      "name": "shopping",
+      "active": true
     },
     {
-      "id": 5,
-      "name": "salary"
+      "id": "c0000000-0000-0000-0000-000000000005",
+      "name": "salary",
+      "active": true
     },
     {
-      "id": 6,
-      "name": "entertainment"
+      "id": "c0000000-0000-0000-0000-000000000006",
+      "name": "entertainment",
+      "active": true
     },
     {
-      "id": 7,
-      "name": "transport"
+      "id": "c0000000-0000-0000-0000-000000000007",
+      "name": "transport",
+      "active": true
     },
     {
-      "id": 8,
-      "name": "rent"
+      "id": "c0000000-0000-0000-0000-000000000008",
+      "name": "rent",
+      "active": true
     },
     {
-      "id": 9,
-      "name": "health"
+      "id": "c0000000-0000-0000-0000-000000000009",
+      "name": "health",
+      "active": true
     },
     {
-      "id": 10,
-      "name": "other"
+      "id": "c0000000-0000-0000-0000-000000000010",
+      "name": "other",
+      "active": true
     }
   ]
 }

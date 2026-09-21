@@ -3,7 +3,6 @@ import { useState } from 'react';
 import {
   ArrowLeftRight,
   BarChart3,
-  CalendarClock,
   ChevronUp,
   Home,
   PiggyBank,
@@ -32,11 +31,6 @@ const navItems = [
     to: '/transactions',
     label: 'Transactions',
     icon: ArrowLeftRight,
-  },
-  {
-    to: '/recurring-transactions',
-    label: 'Recurring',
-    icon: CalendarClock,
   },
   {
     to: '/budgets',

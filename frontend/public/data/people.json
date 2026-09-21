@@ -1,24 +1,29 @@
 {
   "people": [
     {
-      "id": 1,
-      "name": "Rahul"
+      "id": "f0000000-0000-0000-0000-000000000001",
+      "name": "Rahul",
+      "active": true
     },
     {
-      "id": 2,
-      "name": "Priya"
+      "id": "f0000000-0000-0000-0000-000000000002",
+      "name": "Priya",
+      "active": true
     },
     {
-      "id": 3,
-      "name": "Arjun"
+      "id": "f0000000-0000-0000-0000-000000000003",
+      "name": "Arjun",
+      "active": true
     },
     {
-      "id": 4,
-      "name": "Sneha"
+      "id": "f0000000-0000-0000-0000-000000000004",
+      "name": "Sneha",
+      "active": true
     },
     {
-      "id": 5,
-      "name": "Kiran"
+      "id": "f0000000-0000-0000-0000-000000000005",
+      "name": "Kiran",
+      "active": true
     }
   ]
 }

@@ -23,22 +23,11 @@ import {
 } from 'recharts';
 
 import type {
-  CategoriesResponse,
   Category,
+  CategoriesResponse,
   Transaction,
   TransactionsResponse,
 } from '../types';
-
-import {
-  calculateNetSavings,
-  calculateSavingsRate,
-  calculateTotalExpenses,
-  calculateTotalIncome,
-  formatMonth,
-  getFinancialTransactions,
-  getMonthKey,
-  getRecentMonths,
-} from '../utils/finance';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', {
@@ -62,7 +51,7 @@ const chartColors = [
 ];
 
 type CategorySpending = {
-  id: number;
+  id: string;
   name: string;
   amount: number;
   percentage: number;
@@ -76,81 +65,221 @@ type MonthlyData = {
   savings: number;
 };
 
+function getMonthKey(date: string) {
+  return date.slice(0, 7);
+}
+
+function formatMonth(month: string) {
+  const [year, monthNumber] = month.split('-');
+
+  const date = new Date(Number(year), Number(monthNumber) - 1, 1);
+
+  return date.toLocaleDateString('en-IN', {
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function getRecentMonths(count: number) {
+  const months: string[] = [];
+
+  const now = new Date();
+
+  for (let i = count - 1; i >= 0; i--) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+
+    months.push(`${year}-${month}`);
+  }
+
+  return months;
+}
+
 function Analytics() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-
   const [categories, setCategories] = useState<Category[]>([]);
-
   const [loading, setLoading] = useState(true);
 
   /*
-   * Load transactions and categories.
+   * ---------------------------------------------------------
+   * LOAD TRANSACTIONS + CATEGORIES
+   * ---------------------------------------------------------
    */
-  useEffect(() => {
-    Promise.all([
-      fetch('/data/transactions.json').then(
-        (response) => response.json() as Promise<TransactionsResponse>,
-      ),
-      fetch('/data/categories.json').then(
-        (response) => response.json() as Promise<CategoriesResponse>,
-      ),
-    ])
-      .then(([transactionData, categoryData]) => {
-        setTransactions(transactionData.transactions);
 
-        setCategories(categoryData.categories);
-      })
-      .catch((error) => {
+  useEffect(() => {
+    const API_URL = 'http://127.0.0.1:8000';
+
+    const loadData = async () => {
+      try {
+        const [transactionsResponse, categoriesResponse] = await Promise.all([
+          fetch(`${API_URL}/api/transactions`),
+          fetch(`${API_URL}/api/categories`),
+        ]);
+
+        if (!transactionsResponse.ok) {
+          throw new Error(
+            `Transactions request failed: ${transactionsResponse.status}`,
+          );
+        }
+
+        if (!categoriesResponse.ok) {
+          throw new Error(
+            `Categories request failed: ${categoriesResponse.status}`,
+          );
+        }
+
+        /*
+         * -----------------------------------------------------
+         * TRANSACTIONS
+         * -----------------------------------------------------
+         */
+
+        const transactionsData = (await transactionsResponse.json()) as {
+          transactions: Array<{
+            id: string;
+            transaction_date: string;
+            reason?: string | null;
+            category_id: string | null;
+            account_id: string;
+            amount: number | string;
+            type: 'sent' | 'received';
+            transfer_id?: string | null;
+          }>;
+        };
+
+        /*
+         * -----------------------------------------------------
+         * CATEGORIES
+         * -----------------------------------------------------
+         */
+
+        const categoriesData =
+          (await categoriesResponse.json()) as CategoriesResponse;
+
+        /*
+         * -----------------------------------------------------
+         * NORMALIZE TRANSACTIONS
+         *
+         * Backend:
+         * transaction_date
+         * category_id
+         * account_id
+         * transfer_id
+         *
+         * Frontend:
+         * transactionDate
+         * categoryId
+         * accountId
+         * transferId
+         * -----------------------------------------------------
+         */
+
+        const normalizedTransactions: Transaction[] =
+          transactionsData.transactions.map((transaction) => ({
+            id: transaction.id,
+            transactionDate: transaction.transaction_date,
+            reason: transaction.reason ?? null,
+            categoryId: transaction.category_id ?? '',
+            accountId: transaction.account_id,
+            amount: Number(transaction.amount),
+            type: transaction.type,
+            transferId: transaction.transfer_id ?? null,
+          }));
+
+        /*
+         * -----------------------------------------------------
+         * NORMALIZE CATEGORIES
+         * -----------------------------------------------------
+         */
+
+        const normalizedCategories: Category[] = categoriesData.categories.map(
+          (category) => ({
+            id: category.id,
+            name: category.name,
+            active: category.active,
+          }),
+        );
+
+        setTransactions(normalizedTransactions);
+        setCategories(normalizedCategories);
+
+        console.log('Analytics transactions:', normalizedTransactions);
+        console.log('Analytics categories:', normalizedCategories);
+      } catch (error) {
         console.error('Failed to load analytics data:', error);
-      })
-      .finally(() => {
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+
+    loadData();
   }, []);
 
   /*
-   * Exclude self transfers.
+   * ---------------------------------------------------------
+   * EXCLUDE SELF TRANSFERS
+   *
+   * Transfers are still present in transaction history,
+   * but must not count as income or expenses.
+   * ---------------------------------------------------------
    */
-  const financialTransactions = useMemo(
-    () => getFinancialTransactions(transactions),
-    [transactions],
-  );
+
+  const financialTransactions = useMemo(() => {
+    return transactions.filter(
+      (transaction) => transaction.transferId === null,
+    );
+  }, [transactions]);
 
   /*
-   * Summary calculations.
+   * ---------------------------------------------------------
+   * SUMMARY CALCULATIONS
+   * ---------------------------------------------------------
    */
-  const totalIncome = useMemo(
-    () => calculateTotalIncome(transactions),
-    [transactions],
-  );
 
-  const totalExpenses = useMemo(
-    () => calculateTotalExpenses(transactions),
-    [transactions],
-  );
+  const totalIncome = useMemo(() => {
+    return financialTransactions
+      .filter((transaction) => transaction.type === 'received')
+      .reduce((total, transaction) => total + transaction.amount, 0);
+  }, [financialTransactions]);
 
-  const netSavings = useMemo(
-    () => calculateNetSavings(transactions),
-    [transactions],
-  );
+  const totalExpenses = useMemo(() => {
+    return financialTransactions
+      .filter((transaction) => transaction.type === 'sent')
+      .reduce((total, transaction) => total + transaction.amount, 0);
+  }, [financialTransactions]);
 
-  const savingsRate = useMemo(
-    () => calculateSavingsRate(transactions),
-    [transactions],
-  );
+  const netSavings = useMemo(() => {
+    return totalIncome - totalExpenses;
+  }, [totalIncome, totalExpenses]);
+
+  const savingsRate = useMemo(() => {
+    if (totalIncome === 0) {
+      return 0;
+    }
+
+    return (netSavings / totalIncome) * 100;
+  }, [totalIncome, netSavings]);
 
   /*
-   * Category lookup.
+   * ---------------------------------------------------------
+   * CATEGORY LOOKUP
+   * ---------------------------------------------------------
    */
+
   const categoryMap = useMemo(() => {
     return new Map(categories.map((category) => [category.id, category.name]));
   }, [categories]);
 
   /*
-   * Spending by category.
+   * ---------------------------------------------------------
+   * SPENDING BY CATEGORY
+   * ---------------------------------------------------------
    */
+
   const categorySpending = useMemo<CategorySpending[]>(() => {
-    const spending = new Map<number, number>();
+    const spending = new Map<string, number>();
 
     financialTransactions
       .filter((transaction) => transaction.type === 'sent')
@@ -176,13 +305,19 @@ function Analytics() {
   }, [financialTransactions, categoryMap]);
 
   /*
-   * Last 12 months.
+   * ---------------------------------------------------------
+   * LAST 12 MONTHS
+   * ---------------------------------------------------------
    */
+
   const recentMonths = useMemo(() => getRecentMonths(12), []);
 
   /*
-   * Monthly analytics.
+   * ---------------------------------------------------------
+   * MONTHLY ANALYTICS
+   * ---------------------------------------------------------
    */
+
   const monthlyData = useMemo<MonthlyData[]>(() => {
     const monthly = new Map<
       string,
@@ -200,12 +335,8 @@ function Analytics() {
     });
 
     financialTransactions.forEach((transaction) => {
-      const month = getMonthKey(transaction.date);
+      const month = getMonthKey(transaction.transactionDate);
 
-      /*
-       * Only show transactions in the
-       * selected 12-month period.
-       */
       if (!monthly.has(month)) {
         return;
       }
@@ -233,11 +364,11 @@ function Analytics() {
   }, [financialTransactions, recentMonths]);
 
   /*
-   * Average monthly savings.
-   *
-   * Uses the 12 displayed months, including
-   * months with zero activity.
+   * ---------------------------------------------------------
+   * AVERAGE MONTHLY SAVINGS
+   * ---------------------------------------------------------
    */
+
   const averageMonthlySavings = useMemo(() => {
     if (monthlyData.length === 0) {
       return 0;
@@ -250,8 +381,11 @@ function Analytics() {
   }, [monthlyData]);
 
   /*
-   * Previous month comparison.
+   * ---------------------------------------------------------
+   * PREVIOUS MONTH COMPARISON
+   * ---------------------------------------------------------
    */
+
   const currentMonthExpenses =
     monthlyData.length > 0 ? monthlyData[monthlyData.length - 1].expenses : 0;
 
@@ -269,6 +403,12 @@ function Analytics() {
     );
   }, [currentMonthExpenses, previousMonthExpenses]);
 
+  /*
+   * ---------------------------------------------------------
+   * LOADING
+   * ---------------------------------------------------------
+   */
+
   if (loading) {
     return (
       <main className="px-6 py-8">
@@ -277,10 +417,17 @@ function Analytics() {
     );
   }
 
+  /*
+   * ---------------------------------------------------------
+   * UI
+   * ---------------------------------------------------------
+   */
+
   return (
     <main className="px-6 py-8 pb-24">
       <div className="mx-auto max-w-6xl">
         {/* HEADER */}
+
         <div className="mb-8">
           <h1 className="text-2xl font-semibold text-slate-900">Analytics</h1>
 
@@ -290,8 +437,10 @@ function Analytics() {
         </div>
 
         {/* SUMMARY */}
+
         <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Income */}
+          {/* INCOME */}
+
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-50 text-green-600">
@@ -306,7 +455,8 @@ function Analytics() {
             </p>
           </div>
 
-          {/* Expenses */}
+          {/* EXPENSES */}
+
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-600">
@@ -323,7 +473,8 @@ function Analytics() {
             </p>
           </div>
 
-          {/* Savings */}
+          {/* SAVINGS */}
+
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
@@ -342,7 +493,8 @@ function Analytics() {
             </p>
           </div>
 
-          {/* Savings Rate */}
+          {/* SAVINGS RATE */}
+
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
@@ -362,7 +514,52 @@ function Analytics() {
           </div>
         </div>
 
+        {/* SAVINGS SUMMARY */}
+
+        <section className="mb-6 rounded-xl border border-slate-200 bg-white p-6">
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Savings Summary
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              How much you're keeping after expenses.
+            </p>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-3">
+            <div>
+              <p className="text-sm text-slate-500">Average Monthly Savings</p>
+
+              <p
+                className={`mt-1 text-xl font-semibold ${
+                  averageMonthlySavings >= 0 ? 'text-slate-900' : 'text-red-600'
+                }`}
+              >
+                {formatCurrency(Math.abs(averageMonthlySavings))}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-sm text-slate-500">Total Income</p>
+
+              <p className="mt-1 text-xl font-semibold text-green-600">
+                {formatCurrency(totalIncome)}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-sm text-slate-500">Total Expenses</p>
+
+              <p className="mt-1 text-xl font-semibold text-red-600">
+                {formatCurrency(totalExpenses)}
+              </p>
+            </div>
+          </div>
+        </section>
+
         {/* SPENDING BY CATEGORY */}
+
         <section className="mb-6 rounded-xl border border-slate-200 bg-white p-6">
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-slate-900">
@@ -383,6 +580,7 @@ function Analytics() {
           ) : (
             <div className="grid items-center gap-8 lg:grid-cols-2">
               {/* DONUT */}
+
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -414,6 +612,7 @@ function Analytics() {
               </div>
 
               {/* CATEGORY LIST */}
+
               <div className="space-y-4">
                 {categorySpending.map((category, index) => (
                   <div
@@ -451,6 +650,7 @@ function Analytics() {
         </section>
 
         {/* MONTHLY SPENDING */}
+
         <section className="mb-6 rounded-xl border border-slate-200 bg-white p-6">
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-slate-900">
@@ -514,7 +714,8 @@ function Analytics() {
         </section>
 
         {/* INCOME VS EXPENSES */}
-        <section className="mb-6 rounded-xl border border-slate-200 bg-white p-6">
+
+        <section className="rounded-xl border border-slate-200 bg-white p-6">
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-slate-900">
               Income vs Expenses
@@ -560,49 +761,6 @@ function Analytics() {
                 />
               </LineChart>
             </ResponsiveContainer>
-          </div>
-        </section>
-
-        {/* SAVINGS SUMMARY */}
-        <section className="rounded-xl border border-slate-200 bg-white p-6">
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Savings Summary
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              How much you're keeping after expenses.
-            </p>
-          </div>
-
-          <div className="grid gap-6 sm:grid-cols-3">
-            <div>
-              <p className="text-sm text-slate-500">Average Monthly Savings</p>
-
-              <p
-                className={`mt-1 text-xl font-semibold ${
-                  averageMonthlySavings >= 0 ? 'text-slate-900' : 'text-red-600'
-                }`}
-              >
-                {formatCurrency(Math.abs(averageMonthlySavings))}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-slate-500">Total Income</p>
-
-              <p className="mt-1 text-xl font-semibold text-green-600">
-                {formatCurrency(totalIncome)}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-slate-500">Total Expenses</p>
-
-              <p className="mt-1 text-xl font-semibold text-red-600">
-                {formatCurrency(totalExpenses)}
-              </p>
-            </div>
           </div>
         </section>
       </div>

@@ -1,57 +1,57 @@
 {
   "interactions": [
     {
-      "id": 1,
-      "personId": 1,
-      "date": "2026-09-01",
+      "id": "g0000000-0000-0000-0000-000000000001",
+      "person_id": "f0000000-0000-0000-0000-000000000001",
+      "interaction_date": "2026-09-01",
       "amount": 2500,
       "type": "owed_to_me",
       "reason": "Dinner"
     },
     {
-      "id": 2,
-      "personId": 1,
-      "date": "2026-09-03",
+      "id": "g0000000-0000-0000-0000-000000000002",
+      "person_id": "f0000000-0000-0000-0000-000000000001",
+      "interaction_date": "2026-09-03",
       "amount": 2500,
       "type": "payment_received",
       "reason": "Rahul paid me"
     },
     {
-      "id": 3,
-      "personId": 1,
-      "date": "2026-09-05",
+      "id": "g0000000-0000-0000-0000-000000000003",
+      "person_id": "f0000000-0000-0000-0000-000000000001",
+      "interaction_date": "2026-09-05",
       "amount": 1000,
       "type": "i_owe",
       "reason": "Lunch"
     },
     {
-      "id": 4,
-      "personId": 2,
-      "date": "2026-09-02",
+      "id": "g0000000-0000-0000-0000-000000000004",
+      "person_id": "f0000000-0000-0000-0000-000000000002",
+      "interaction_date": "2026-09-02",
       "amount": 3500,
       "type": "owed_to_me",
       "reason": "Travel expenses"
     },
     {
-      "id": 5,
-      "personId": 3,
-      "date": "2026-08-28",
+      "id": "g0000000-0000-0000-0000-000000000005",
+      "person_id": "f0000000-0000-0000-0000-000000000003",
+      "interaction_date": "2026-08-28",
       "amount": 750,
       "type": "i_owe",
       "reason": "Lunch"
     },
     {
-      "id": 6,
-      "personId": 4,
-      "date": "2026-08-20",
+      "id": "g0000000-0000-0000-0000-000000000006",
+      "person_id": "f0000000-0000-0000-0000-000000000004",
+      "interaction_date": "2026-08-20",
       "amount": 3000,
       "type": "owed_to_me",
       "reason": "Trip expenses"
     },
     {
-      "id": 7,
-      "personId": 5,
-      "date": "2026-09-03",
+      "id": "g0000000-0000-0000-0000-000000000007",
+      "person_id": "f0000000-0000-0000-0000-000000000005",
+      "interaction_date": "2026-09-03",
       "amount": 500,
       "type": "owed_to_me",
       "reason": "Coffee"

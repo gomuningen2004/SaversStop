@@ -1,24 +1,29 @@
 /*
- * Accounts
+ * Account Types
  */
-
-export type AccountType =
-  | 'bank'
-  | 'cash'
-  | 'wallet'
-  | 'fixed_deposit'
-  | 'investment'
-  | 'credit_card'
-  | 'loan';
 
 export type AccountClassification = 'asset' | 'liability';
 
-export type Account = {
-  id: number;
+export type AccountType = {
+  id: string;
   name: string;
-  type: AccountType;
   classification: AccountClassification;
-  balance: number;
+  active: boolean;
+};
+
+export type AccountTypesResponse = {
+  accountTypes: AccountType[];
+};
+
+/*
+ * Accounts
+ */
+
+export type Account = {
+  id: string;
+  name: string;
+  accountTypeId: string;
+  currentBalance: number;
   active: boolean;
 };
 
@@ -31,8 +36,9 @@ export type AccountsResponse = {
  */
 
 export type Category = {
-  id: number;
+  id: string;
   name: string;
+  active: boolean;
 };
 
 export type CategoriesResponse = {
@@ -40,33 +46,51 @@ export type CategoriesResponse = {
 };
 
 /*
+ * Transfers
+ */
+
+export type Transfer = {
+  id: string;
+  transferDate: string;
+};
+
+export type TransfersResponse = {
+  transfers: Transfer[];
+};
+
+/*
  * Transactions
  */
 
 export type Transaction = {
-  id: number;
-  date: string;
+  id: string;
+  transactionDate: string;
 
   /*
-   * Normal transactions have a reason.
-   * Self transfers do not need one.
+   * Normal transactions can have a reason.
+   * Self-transfers do not need one.
    */
-  reason?: string;
+  reason?: string | null;
 
   /*
    * References the category from categories.json
    */
-  categoryId: number;
+  categoryId: string;
 
-  account: string;
+  /*
+   * References the account from accounts.json
+   */
+  accountId: string;
+
   amount: number;
 
   type: 'sent' | 'received';
 
   /*
    * Present only for self-transfer transactions.
+   * Normal transactions have null/undefined.
    */
-  transferId?: number;
+  transferId?: string | null;
 };
 
 export type TransactionsResponse = {
@@ -78,12 +102,11 @@ export type TransactionsResponse = {
  */
 
 export type Goal = {
-  id: number;
+  id: string;
   name: string;
   targetAmount: number;
   savedAmount: number;
   monthlyContribution: number;
-  account: string;
   targetDate: string;
   status: 'active' | 'completed';
 };
@@ -97,8 +120,9 @@ export type GoalsResponse = {
  */
 
 export type Person = {
-  id: number;
+  id: string;
   name: string;
+  active: boolean;
 };
 
 export type PeopleResponse = {
@@ -106,13 +130,13 @@ export type PeopleResponse = {
 };
 
 /*
- * Debt interactions
+ * Debt Interactions
  */
 
 export type DebtInteraction = {
-  id: number;
-  personId: number;
-  date: string;
+  id: string;
+  personId: string;
+  interactionDate: string;
   amount: number;
   type: 'owed_to_me' | 'payment_received' | 'i_owe' | 'payment_sent';
   reason: string;
@@ -122,35 +146,17 @@ export type DebtInteractionsResponse = {
   interactions: DebtInteraction[];
 };
 
+/*
+ * Budgets
+ */
+
 export type Budget = {
-  id: number;
+  id: string;
   month: string;
-  categoryId: number;
+  categoryId: string;
   amount: number;
 };
 
 export type BudgetsResponse = {
   budgets: Budget[];
-};
-
-export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
-
-export type RecurringTransaction = {
-  id: number;
-  name: string;
-  amount: number;
-  type: 'sent' | 'received';
-  frequency: RecurringFrequency;
-  dayOfMonth?: number;
-  dayOfWeek?: number;
-  monthOfYear?: number;
-  account: string;
-  categoryId: number;
-  startDate: string;
-  endDate?: string;
-  active: boolean;
-};
-
-export type RecurringTransactionsResponse = {
-  recurringTransactions: RecurringTransaction[];
 };

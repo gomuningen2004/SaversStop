@@ -16,7 +16,10 @@ import type {
   AccountClassification,
   AccountType,
   AccountsResponse,
+  AccountTypesResponse,
 } from '../types';
+
+const API_URL = 'http://127.0.0.1:8000';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', {
@@ -26,81 +29,128 @@ const formatCurrency = (amount: number) =>
     maximumFractionDigits: 2,
   }).format(amount);
 
-const accountTypeLabels: Record<AccountType, string> = {
-  bank: 'Bank Account',
-  cash: 'Cash',
-  wallet: 'Wallet',
-  fixed_deposit: 'Fixed Deposit',
-  investment: 'Investment',
-  credit_card: 'Credit Card',
-  loan: 'Loan',
-};
-
-const accountTypeIcons: Record<AccountType, typeof Landmark> = {
-  bank: Landmark,
-  cash: Banknote,
-  wallet: Wallet,
-  fixed_deposit: Landmark,
-  investment: Banknote,
-  credit_card: CreditCard,
-  loan: Banknote,
+const accountTypeIcons: Record<string, typeof Landmark> = {
+  Bank: Landmark,
+  Cash: Banknote,
+  Wallet: Wallet,
+  'Fixed Deposit': Landmark,
+  Investment: Banknote,
+  'Credit Card': CreditCard,
+  Loan: Banknote,
 };
 
 function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountTypes, setAccountTypes] = useState<AccountType[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
 
   const [name, setName] = useState('');
-  const [type, setType] = useState<AccountType>('bank');
+  const [typeId, setTypeId] = useState('');
   const [classification, setClassification] =
     useState<AccountClassification>('asset');
   const [balance, setBalance] = useState('');
 
   useEffect(() => {
-    fetch('/data/accounts.json')
-      .then((response) => response.json() as Promise<AccountsResponse>)
-      .then((data) => {
-        setAccounts(data.accounts);
+    Promise.all([
+      fetch(`${API_URL}/api/accounts`).then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load accounts');
+        }
+
+        return response.json() as Promise<AccountsResponse>;
+      }),
+
+      fetch(`${API_URL}/api/account-types`).then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load account types');
+        }
+
+        return response.json() as Promise<AccountTypesResponse>;
+      }),
+    ])
+      .then(([accountsData, accountTypesData]) => {
+        const normalizedAccounts: Account[] = accountsData.accounts.map(
+          (account) => ({
+            id: account.id,
+            name: account.name,
+            accountTypeId: account.account_type_id,
+            currentBalance: Number(account.current_balance),
+            active: account.active,
+          }),
+        );
+
+        const normalizedAccountTypes: AccountType[] =
+          accountTypesData.accountTypes.map((accountType) => ({
+            id: accountType.id,
+            name: accountType.name,
+            classification: accountType.classification,
+            active: accountType.active,
+          }));
+
+        setAccounts(normalizedAccounts);
+        setAccountTypes(normalizedAccountTypes);
+
+        if (normalizedAccountTypes.length > 0) {
+          setTypeId(normalizedAccountTypes[0].id);
+          setClassification(normalizedAccountTypes[0].classification);
+        }
       })
       .catch((error) => {
-        console.error('Failed to load accounts:', error);
+        console.error('Failed to load account data:', error);
       })
       .finally(() => {
         setLoading(false);
       });
   }, []);
 
+  const activeAccountTypes = useMemo(
+    () => accountTypes.filter((accountType) => accountType.active),
+    [accountTypes],
+  );
+
   const activeAccounts = useMemo(
     () => accounts.filter((account) => account.active),
     [accounts],
   );
 
+  const getAccountType = (accountTypeId: string) =>
+    accountTypes.find((accountType) => accountType.id === accountTypeId);
+
+  const getAccountClassification = (account: Account) =>
+    getAccountType(account.accountTypeId)?.classification;
+
   const assetAccounts = useMemo(
     () =>
-      activeAccounts.filter((account) => account.classification === 'asset'),
-    [activeAccounts],
+      activeAccounts.filter(
+        (account) => getAccountClassification(account) === 'asset',
+      ),
+    [activeAccounts, accountTypes],
   );
 
   const liabilityAccounts = useMemo(
     () =>
       activeAccounts.filter(
-        (account) => account.classification === 'liability',
+        (account) => getAccountClassification(account) === 'liability',
       ),
-    [activeAccounts],
+    [activeAccounts, accountTypes],
   );
 
   const totalAssets = useMemo(
-    () => assetAccounts.reduce((total, account) => total + account.balance, 0),
+    () =>
+      assetAccounts.reduce(
+        (total, account) => total + account.currentBalance,
+        0,
+      ),
     [assetAccounts],
   );
 
   const totalLiabilities = useMemo(
     () =>
       liabilityAccounts.reduce(
-        (total, account) => total + Math.abs(account.balance),
+        (total, account) => total + Math.abs(account.currentBalance),
         0,
       ),
     [liabilityAccounts],
@@ -110,8 +160,17 @@ function Accounts() {
 
   const resetForm = () => {
     setName('');
-    setType('bank');
-    setClassification('asset');
+
+    if (activeAccountTypes.length > 0) {
+      const defaultType = activeAccountTypes[0];
+
+      setTypeId(defaultType.id);
+      setClassification(defaultType.classification);
+    } else {
+      setTypeId('');
+      setClassification('asset');
+    }
+
     setBalance('');
     setEditingAccount(null);
   };
@@ -122,11 +181,13 @@ function Accounts() {
   };
 
   const openEditModal = (account: Account) => {
+    const accountType = getAccountType(account.accountTypeId);
+
     setEditingAccount(account);
     setName(account.name);
-    setType(account.type);
-    setClassification(account.classification);
-    setBalance(account.balance.toString());
+    setTypeId(account.accountTypeId);
+    setClassification(accountType?.classification ?? 'asset');
+    setBalance(account.currentBalance.toString());
     setShowModal(true);
   };
 
@@ -135,21 +196,45 @@ function Accounts() {
     resetForm();
   };
 
-  const handleTypeChange = (newType: AccountType) => {
-    setType(newType);
+  const handleTypeChange = (newTypeId: string) => {
+    setTypeId(newTypeId);
 
-    /*
-     * Credit cards and loans are liabilities by default.
-     * Everything else is an asset.
-     */
-    if (newType === 'credit_card' || newType === 'loan') {
-      setClassification('liability');
-    } else {
-      setClassification('asset');
+    const selectedType = getAccountType(newTypeId);
+
+    if (selectedType) {
+      setClassification(selectedType.classification);
     }
   };
 
-  const handleSave = () => {
+  const handleClassificationChange = (
+    newClassification: AccountClassification,
+  ) => {
+    setClassification(newClassification);
+
+    const compatibleType = activeAccountTypes.find(
+      (accountType) => accountType.classification === newClassification,
+    );
+
+    if (compatibleType) {
+      setTypeId(compatibleType.id);
+    }
+  };
+
+  const normalizeAccount = (account: {
+    id: string;
+    name: string;
+    account_type_id: string;
+    current_balance: string | number;
+    active: boolean;
+  }): Account => ({
+    id: account.id,
+    name: account.name,
+    accountTypeId: account.account_type_id,
+    currentBalance: Number(account.current_balance),
+    active: account.active,
+  });
+
+  const handleSave = async () => {
     const trimmedName = name.trim();
     const numericBalance = Number(balance);
 
@@ -163,59 +248,135 @@ function Accounts() {
       return;
     }
 
-    /*
-     * Liability balances are stored as positive numbers.
-     * The application treats them as amounts owed.
-     */
-    const normalizedBalance = Math.abs(numericBalance);
-
-    if (editingAccount) {
-      setAccounts((current) =>
-        current.map((account) =>
-          account.id === editingAccount.id
-            ? {
-                ...account,
-                name: trimmedName,
-                type,
-                classification,
-                balance: normalizedBalance,
-              }
-            : account,
-        ),
-      );
-    } else {
-      const newAccount: Account = {
-        id:
-          accounts.length > 0
-            ? Math.max(...accounts.map((account) => account.id)) + 1
-            : 1,
-        name: trimmedName,
-        type,
-        classification,
-        balance: normalizedBalance,
-        active: true,
-      };
-
-      setAccounts((current) => [...current, newAccount]);
+    if (!typeId) {
+      alert('Please select an account type.');
+      return;
     }
 
-    closeModal();
+    const selectedType = getAccountType(typeId);
+
+    if (!selectedType) {
+      alert('Please select a valid account type.');
+      return;
+    }
+
+    const normalizedBalance = Math.abs(numericBalance);
+
+    try {
+      if (editingAccount) {
+        const response = await fetch(
+          `${API_URL}/api/accounts/${editingAccount.id}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name: trimmedName,
+              account_type_id: typeId,
+              current_balance: normalizedBalance,
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+
+          throw new Error(errorData?.detail || 'Failed to update account');
+        }
+
+        const data = await response.json();
+
+        const updatedAccount = normalizeAccount(data.account);
+
+        setAccounts((current) =>
+          current.map((account) =>
+            account.id === updatedAccount.id ? updatedAccount : account,
+          ),
+        );
+      } else {
+        const response = await fetch(`${API_URL}/api/accounts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: trimmedName,
+            account_type_id: typeId,
+            current_balance: normalizedBalance,
+            active: true,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+
+          throw new Error(errorData?.detail || 'Failed to create account');
+        }
+
+        const data = await response.json();
+
+        const newAccount = normalizeAccount(data.account);
+
+        setAccounts((current) => [...current, newAccount]);
+      }
+
+      closeModal();
+    } catch (error) {
+      console.error('Failed to save account:', error);
+
+      alert(error instanceof Error ? error.message : 'Failed to save account.');
+    }
   };
 
-  const handleDelete = (account: Account) => {
+  const handleDelete = async (account: Account) => {
     const confirmed = window.confirm(`Deactivate "${account.name}"?`);
 
     if (!confirmed) return;
 
-    setAccounts((current) =>
-      current.map((item) =>
-        item.id === account.id ? { ...item, active: false } : item,
-      ),
-    );
+    try {
+      const response = await fetch(`${API_URL}/api/accounts/${account.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          active: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+
+        throw new Error(errorData?.detail || 'Failed to deactivate account');
+      }
+
+      const data = await response.json();
+
+      const deactivatedAccount = normalizeAccount(data.account);
+
+      setAccounts((current) =>
+        current.map((item) =>
+          item.id === deactivatedAccount.id ? deactivatedAccount : item,
+        ),
+      );
+    } catch (error) {
+      console.error('Failed to deactivate account:', error);
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Failed to deactivate account.',
+      );
+    }
   };
 
   const renderAccount = (account: Account) => {
-    const Icon = accountTypeIcons[account.type];
+    const accountType = getAccountType(account.accountTypeId);
+
+    const accountClassification = accountType?.classification;
+
+    const Icon = accountTypeIcons[accountType?.name ?? ''] ?? Landmark;
 
     return (
       <div
@@ -232,7 +393,7 @@ function Accounts() {
               <h3 className="font-semibold text-slate-900">{account.name}</h3>
 
               <p className="mt-1 text-xs text-slate-500">
-                {accountTypeLabels[account.type]}
+                {accountType?.name ?? 'Unknown Account Type'}
               </p>
             </div>
           </div>
@@ -268,19 +429,19 @@ function Accounts() {
 
         <div className="mt-6">
           <p className="text-xs text-slate-500">
-            {account.classification === 'asset'
+            {accountClassification === 'asset'
               ? 'Current Value'
               : 'Outstanding'}
           </p>
 
           <p
             className={`mt-1 text-2xl font-semibold ${
-              account.classification === 'liability'
+              accountClassification === 'liability'
                 ? 'text-red-600'
                 : 'text-slate-900'
             }`}
           >
-            {formatCurrency(Math.abs(account.balance))}
+            {formatCurrency(Math.abs(account.currentBalance))}
           </p>
         </div>
       </div>
@@ -452,35 +613,6 @@ function Accounts() {
                 />
               </label>
 
-              {/* TYPE */}
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
-                  Account Type
-                </span>
-
-                <select
-                  value={type}
-                  onChange={(event) =>
-                    handleTypeChange(event.target.value as AccountType)
-                  }
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                >
-                  <option value="bank">Bank Account</option>
-
-                  <option value="cash">Cash</option>
-
-                  <option value="wallet">Wallet</option>
-
-                  <option value="fixed_deposit">Fixed Deposit</option>
-
-                  <option value="investment">Investment</option>
-
-                  <option value="credit_card">Credit Card</option>
-
-                  <option value="loan">Loan</option>
-                </select>
-              </label>
-
               {/* CLASSIFICATION */}
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-700">
@@ -490,7 +622,7 @@ function Accounts() {
                 <select
                   value={classification}
                   onChange={(event) =>
-                    setClassification(
+                    handleClassificationChange(
                       event.target.value as AccountClassification,
                     )
                   }
@@ -498,6 +630,30 @@ function Accounts() {
                 >
                   <option value="asset">Asset</option>
                   <option value="liability">Liability</option>
+                </select>
+              </label>
+
+              {/* TYPE */}
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">
+                  Account Type
+                </span>
+
+                <select
+                  value={typeId}
+                  onChange={(event) => handleTypeChange(event.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                >
+                  {activeAccountTypes
+                    .filter(
+                      (accountType) =>
+                        accountType.classification === classification,
+                    )
+                    .map((accountType) => (
+                      <option key={accountType.id} value={accountType.id}>
+                        {accountType.name}
+                      </option>
+                    ))}
                 </select>
               </label>
 

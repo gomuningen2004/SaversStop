@@ -1,23 +1,21 @@
 {
   "goals": [
     {
-      "id": 1,
+      "id": "i0000000-0000-0000-0000-000000000001",
       "name": "New Laptop",
-      "targetAmount": 80000,
-      "savedAmount": 30000,
-      "monthlyContribution": 10000,
-      "account": "HDFC Bank",
-      "targetDate": "2027-06-30",
+      "target_amount": 80000,
+      "saved_amount": 30000,
+      "monthly_contribution": 10000,
+      "target_date": "2027-06-30",
       "status": "active"
     },
     {
-      "id": 2,
+      "id": "i0000000-0000-0000-0000-000000000002",
       "name": "Emergency Fund",
-      "targetAmount": 100000,
-      "savedAmount": 20000,
-      "monthlyContribution": 5000,
-      "account": "SBI Bank",
-      "targetDate": "2027-12-31",
+      "target_amount": 100000,
+      "saved_amount": 20000,
+      "monthly_contribution": 5000,
+      "target_date": "2027-12-31",
       "status": "active"
     }
   ]

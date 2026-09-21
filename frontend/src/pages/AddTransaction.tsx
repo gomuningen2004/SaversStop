@@ -1,15 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
-import type {
-  Account,
-  AccountsResponse,
-  Category,
-  CategoriesResponse,
-} from '../types';
+import type { Account, Category } from '../types';
+
+const API_URL = 'http://127.0.0.1:8000';
 
 type FormMode = 'transaction' | 'self-transfer';
-
 type TransactionType = 'sent' | 'received';
 
 function AddTransaction() {
@@ -26,6 +22,7 @@ function AddTransaction() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   /*
    * ---------------------------------------------------------
@@ -58,7 +55,7 @@ function AddTransaction() {
 
   const [categoryId, setCategoryId] = useState('');
 
-  const [account, setAccount] = useState('');
+  const [accountId, setAccountId] = useState('');
 
   /*
    * ---------------------------------------------------------
@@ -66,8 +63,8 @@ function AddTransaction() {
    * ---------------------------------------------------------
    */
 
-  const [fromAccount, setFromAccount] = useState('');
-  const [toAccount, setToAccount] = useState('');
+  const [fromAccountId, setFromAccountId] = useState('');
+  const [toAccountId, setToAccountId] = useState('');
 
   /*
    * ---------------------------------------------------------
@@ -76,45 +73,116 @@ function AddTransaction() {
    */
 
   useEffect(() => {
-    Promise.all([fetch('/data/accounts.json'), fetch('/data/categories.json')])
-      .then(async ([accountsResponse, categoriesResponse]) => {
-        if (!accountsResponse.ok || !categoriesResponse.ok) {
-          throw new Error('Failed to load form data');
+    async function loadFormData() {
+      try {
+        const [accountsResponse, categoriesResponse] = await Promise.all([
+          fetch(`${API_URL}/api/accounts`),
+          fetch(`${API_URL}/api/categories`),
+        ]);
+
+        if (!accountsResponse.ok) {
+          throw new Error('Failed to load accounts.');
         }
 
-        const accountsData =
-          (await accountsResponse.json()) as AccountsResponse;
-
-        const categoriesData =
-          (await categoriesResponse.json()) as CategoriesResponse;
-
-        setAccounts(accountsData.accounts);
-        setCategories(categoriesData.categories);
+        if (!categoriesResponse.ok) {
+          throw new Error('Failed to load categories.');
+        }
 
         /*
-         * Set sensible defaults.
+         * -----------------------------------------------------
+         * ACCOUNTS
+         * -----------------------------------------------------
          */
 
-        if (accountsData.accounts.length > 0) {
-          setAccount(accountsData.accounts[0].name);
-          setFromAccount(accountsData.accounts[0].name);
+        const accountsData = (await accountsResponse.json()) as {
+          accounts: Array<{
+            id: string;
+            name: string;
+            account_type_id: string;
+            current_balance: number | string;
+            active: boolean;
+          }>;
+        };
 
-          if (accountsData.accounts.length > 1) {
-            setToAccount(accountsData.accounts[1].name);
+        const normalizedAccounts: Account[] = accountsData.accounts.map(
+          (account) => ({
+            id: account.id,
+            name: account.name,
+            accountTypeId: account.account_type_id,
+            currentBalance: Number(account.current_balance),
+            active: account.active,
+          }),
+        );
+
+        const activeAccounts = normalizedAccounts.filter(
+          (account) => account.active,
+        );
+
+        /*
+         * -----------------------------------------------------
+         * CATEGORIES
+         * -----------------------------------------------------
+         */
+
+        const categoriesData = (await categoriesResponse.json()) as {
+          categories: Array<{
+            id: string;
+            name: string;
+            active: boolean;
+          }>;
+        };
+
+        const activeCategories: Category[] = categoriesData.categories.filter(
+          (category) => category.active,
+        );
+
+        setAccounts(activeAccounts);
+        setCategories(activeCategories);
+
+        /*
+         * -----------------------------------------------------
+         * DEFAULT ACCOUNT
+         * -----------------------------------------------------
+         */
+
+        if (activeAccounts.length > 0) {
+          setAccountId(activeAccounts[0].id);
+          setFromAccountId(activeAccounts[0].id);
+
+          if (activeAccounts.length > 1) {
+            setToAccountId(activeAccounts[1].id);
           }
         }
 
-        if (categoriesData.categories.length > 0) {
-          setCategoryId(String(categoriesData.categories[0].id));
+        /*
+         * -----------------------------------------------------
+         * DEFAULT CATEGORY
+         * -----------------------------------------------------
+         */
+
+        if (activeCategories.length > 0) {
+          const otherCategory = activeCategories.find(
+            (category) => category.name.toLowerCase() === 'other',
+          );
+
+          setCategoryId(otherCategory?.id ?? activeCategories[0].id);
         }
 
         setLoading(false);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error(err);
-        setError('Unable to load accounts and categories.');
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Unable to load accounts and categories.',
+        );
+
         setLoading(false);
-      });
+      }
+    }
+
+    loadFormData();
   }, []);
 
   /*
@@ -129,129 +197,220 @@ function AddTransaction() {
 
   /*
    * ---------------------------------------------------------
+   * API ERROR
+   * ---------------------------------------------------------
+   */
+
+  async function getApiError(response: Response, fallbackMessage: string) {
+    try {
+      const data = await response.json();
+
+      if (typeof data.detail === 'string') {
+        return data.detail;
+      }
+
+      if (Array.isArray(data.detail)) {
+        return data.detail
+          .map((item: { msg?: string }) => item.msg)
+          .filter(Boolean)
+          .join(', ');
+      }
+    } catch {
+      // Use fallback message.
+    }
+
+    return fallbackMessage;
+  }
+
+  /*
+   * ---------------------------------------------------------
    * SUBMIT
    * ---------------------------------------------------------
    */
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const numericAmount = Number(amount);
-
-    if (!date) {
-      alert('Please select a date.');
+    if (submitting) {
       return;
     }
 
-    if (!numericAmount || numericAmount <= 0) {
-      alert('Please enter a valid amount.');
+    setError('');
+
+    /*
+     * -------------------------------------------------------
+     * COMMON VALIDATION
+     * -------------------------------------------------------
+     */
+
+    if (!date) {
+      setError('Please select a date.');
+      return;
+    }
+
+    const numericAmount = Number(amount);
+
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setError('Please enter a valid amount.');
       return;
     }
 
     /*
      * -------------------------------------------------------
-     * NORMAL TRANSACTION
+     * NORMAL TRANSACTION VALIDATION
      * -------------------------------------------------------
      */
 
     if (mode === 'transaction') {
       if (!reason.trim()) {
-        alert('Please enter a reason.');
+        setError('Please enter a reason.');
         return;
       }
 
       if (!categoryId) {
-        alert('Please select a category.');
+        setError('Please select a category.');
         return;
       }
 
-      if (!account) {
-        alert('Please select an account.');
+      if (!accountId) {
+        setError('Please select an account.');
+        return;
+      }
+    }
+
+    /*
+     * -------------------------------------------------------
+     * SELF TRANSFER VALIDATION
+     * -------------------------------------------------------
+     */
+
+    if (mode === 'self-transfer') {
+      if (!fromAccountId || !toAccountId) {
+        setError('Please select both accounts.');
         return;
       }
 
-      const transaction = {
-        id: Date.now(),
-        date,
-        reason: reason.trim(),
-        categoryId: Number(categoryId),
-        account,
-        amount: numericAmount,
-        type: transactionType,
-      };
+      if (fromAccountId === toAccountId) {
+        setError('From Account and To Account must be different.');
+        return;
+      }
+    }
 
-      console.log('New transaction:', transaction);
+    setSubmitting(true);
 
-      alert('Transaction added successfully.');
+    try {
+      /*
+       * =====================================================
+       * NORMAL TRANSACTION
+       * =====================================================
+       */
+
+      if (mode === 'transaction') {
+        /*
+         * FastAPI expects:
+         *
+         * {
+         *   transaction_date,
+         *   reason,
+         *   category_id,
+         *   account_id,
+         *   amount,
+         *   type
+         * }
+         *
+         * The backend generates the transaction ID.
+         */
+
+        const response = await fetch(`${API_URL}/api/transactions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            transaction_date: `${date}T00:00:00`,
+            reason: reason.trim(),
+            category_id: categoryId,
+            account_id: accountId,
+            amount: numericAmount,
+            type: transactionType,
+          }),
+        });
+
+        if (!response.ok) {
+          const message = await getApiError(
+            response,
+            'Failed to add transaction.',
+          );
+
+          throw new Error(message);
+        }
+
+        /*
+         * Backend successfully created the transaction
+         * and updated the account balance.
+         */
+
+        navigate('/transactions');
+
+        return;
+      }
+
+      /*
+       * =====================================================
+       * SELF TRANSFER
+       * =====================================================
+       *
+       * Only ONE API request is needed.
+       *
+       * The backend creates:
+       *
+       * 1. Transfer record
+       * 2. Sent transaction
+       * 3. Received transaction
+       * 4. Source account balance update
+       * 5. Destination account balance update
+       */
+
+      const response = await fetch(`${API_URL}/api/transfers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transfer_date: `${date}T00:00:00`,
+          source_account_id: fromAccountId,
+          destination_account_id: toAccountId,
+          amount: numericAmount,
+          reason: null,
+        }),
+      });
+
+      if (!response.ok) {
+        const message = await getApiError(
+          response,
+          'Failed to add self transfer.',
+        );
+
+        throw new Error(message);
+      }
+
+      /*
+       * Backend successfully created the transfer
+       * and updated both account balances.
+       */
 
       navigate('/transactions');
+    } catch (err) {
+      console.error(err);
 
-      return;
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Something went wrong. Please try again.',
+      );
+
+      setSubmitting(false);
     }
-
-    /*
-     * -------------------------------------------------------
-     * SELF TRANSFER
-     * -------------------------------------------------------
-     */
-
-    if (!fromAccount || !toAccount) {
-      alert('Please select both accounts.');
-      return;
-    }
-
-    if (fromAccount === toAccount) {
-      alert('From Account and To Account must be different.');
-      return;
-    }
-
-    /*
-     * Find the "other" category.
-     */
-
-    const otherCategory = categories.find(
-      (category) => category.name.toLowerCase() === 'other',
-    );
-
-    if (!otherCategory) {
-      alert('The "other" category is required for self transfers.');
-      return;
-    }
-
-    /*
-     * Both records share the same transferId.
-     */
-
-    const transferId = Date.now();
-
-    const sentTransaction = {
-      id: transferId,
-      date,
-      categoryId: otherCategory.id,
-      account: fromAccount,
-      amount: numericAmount,
-      type: 'sent' as const,
-      transferId,
-    };
-
-    const receivedTransaction = {
-      id: transferId + 1,
-      date,
-      categoryId: otherCategory.id,
-      account: toAccount,
-      amount: numericAmount,
-      type: 'received' as const,
-      transferId,
-    };
-
-    console.log('Self transfer:', {
-      sent: sentTransaction,
-      received: receivedTransaction,
-    });
-
-    alert('Self transfer added successfully.');
-
-    navigate('/transactions');
   }
 
   /*
@@ -270,14 +429,21 @@ function AddTransaction() {
 
   /*
    * ---------------------------------------------------------
-   * ERROR
+   * INITIAL LOAD ERROR
    * ---------------------------------------------------------
    */
 
-  if (error) {
+  if (error && !accounts.length && !categories.length) {
     return (
       <main className="mx-auto max-w-4xl px-6 py-8 pb-24 lg:pb-8">
         <p className="text-sm text-red-500">{error}</p>
+
+        <Link
+          to="/transactions"
+          className="mt-4 inline-block text-sm font-medium text-slate-700 underline"
+        >
+          Back to Transactions
+        </Link>
       </main>
     );
   }
@@ -320,7 +486,10 @@ function AddTransaction() {
           <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
             <button
               type="button"
-              onClick={() => setMode('transaction')}
+              onClick={() => {
+                setMode('transaction');
+                setError('');
+              }}
               className={`rounded-md px-4 py-2.5 text-sm font-medium transition ${
                 mode === 'transaction'
                   ? 'bg-white text-slate-900 shadow-sm'
@@ -332,7 +501,10 @@ function AddTransaction() {
 
             <button
               type="button"
-              onClick={() => setMode('self-transfer')}
+              onClick={() => {
+                setMode('self-transfer');
+                setError('');
+              }}
               className={`rounded-md px-4 py-2.5 text-sm font-medium transition ${
                 mode === 'self-transfer'
                   ? 'bg-white text-slate-900 shadow-sm'
@@ -345,7 +517,17 @@ function AddTransaction() {
         </div>
 
         {/* =================================================
-            FORM FIELDS
+            ERROR MESSAGE
+        ================================================= */}
+
+        {error && (
+          <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {error}
+          </div>
+        )}
+
+        {/* =================================================
+            NORMAL TRANSACTION
         ================================================= */}
 
         {mode === 'transaction' ? (
@@ -453,14 +635,16 @@ function AddTransaction() {
 
               <select
                 id="account"
-                value={account}
-                onChange={(event) => setAccount(event.target.value)}
+                value={accountId}
+                onChange={(event) => setAccountId(event.target.value)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
                 required
               >
-                {accounts.map((item) => (
-                  <option key={item.id} value={item.name}>
-                    {item.name}
+                <option value="">Select account</option>
+
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
                   </option>
                 ))}
               </select>
@@ -527,14 +711,16 @@ function AddTransaction() {
 
               <select
                 id="fromAccount"
-                value={fromAccount}
-                onChange={(event) => setFromAccount(event.target.value)}
+                value={fromAccountId}
+                onChange={(event) => setFromAccountId(event.target.value)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
                 required
               >
-                {accounts.map((item) => (
-                  <option key={item.id} value={item.name}>
-                    {item.name}
+                <option value="">Select account</option>
+
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
                   </option>
                 ))}
               </select>
@@ -552,14 +738,16 @@ function AddTransaction() {
 
               <select
                 id="toAccount"
-                value={toAccount}
-                onChange={(event) => setToAccount(event.target.value)}
+                value={toAccountId}
+                onChange={(event) => setToAccountId(event.target.value)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
                 required
               >
-                {accounts.map((item) => (
-                  <option key={item.id} value={item.name}>
-                    {item.name}
+                <option value="">Select account</option>
+
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
                   </option>
                 ))}
               </select>
@@ -604,9 +792,14 @@ function AddTransaction() {
 
           <button
             type="submit"
-            className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+            disabled={submitting}
+            className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {mode === 'transaction' ? 'Add Transaction' : 'Add Transfer'}
+            {submitting
+              ? 'Saving...'
+              : mode === 'transaction'
+                ? 'Add Transaction'
+                : 'Add Transfer'}
           </button>
         </div>
       </form>

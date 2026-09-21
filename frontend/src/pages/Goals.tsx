@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import type { Goal } from '../types';
+import type { Goal, GoalsResponse } from '../types';
 import {
   analyzeGoal,
   formatGoalDate,
@@ -105,6 +105,11 @@ function Goals() {
 
   const [contributionAmount, setContributionAmount] = useState('');
 
+  /*
+   * Load and normalize goals.
+   *
+   * JSON uses snake_case while the frontend uses camelCase.
+   */
   useEffect(() => {
     const loadGoals = async () => {
       try {
@@ -114,9 +119,29 @@ function Goals() {
           throw new Error('Failed to load goals');
         }
 
-        const data = await response.json();
+        const data = (await response.json()) as {
+          goals?: Array<{
+            id: string;
+            name: string;
+            target_amount: number;
+            saved_amount: number;
+            monthly_contribution: number;
+            target_date: string;
+            status: 'active' | 'completed';
+          }>;
+        };
 
-        setGoals(data.goals ?? []);
+        const normalizedGoals: Goal[] = (data.goals ?? []).map((goal) => ({
+          id: goal.id,
+          name: goal.name,
+          targetAmount: Number(goal.target_amount),
+          savedAmount: Number(goal.saved_amount),
+          monthlyContribution: Number(goal.monthly_contribution),
+          targetDate: goal.target_date,
+          status: goal.status,
+        }));
+
+        setGoals(normalizedGoals);
       } catch (error) {
         console.error('Failed to load goals:', error);
       } finally {
@@ -127,6 +152,9 @@ function Goals() {
     loadGoals();
   }, []);
 
+  /*
+   * Analyze every goal.
+   */
   const analyses = useMemo(() => {
     return goals.map((goal) => ({
       goal,
@@ -139,34 +167,63 @@ function Goals() {
     }));
   }, [goals]);
 
+  /*
+   * Total target across all goals.
+   */
   const totalTarget = useMemo(
     () => goals.reduce((total, goal) => total + goal.targetAmount, 0),
     [goals],
   );
 
+  /*
+   * Total amount currently saved across all goals.
+   */
   const totalSaved = useMemo(
     () => goals.reduce((total, goal) => total + goal.savedAmount, 0),
     [goals],
   );
 
-  const activeGoals = goals.filter((goal) => goal.status === 'active');
+  /*
+   * Active goals.
+   */
+  const activeGoals = useMemo(
+    () => goals.filter((goal) => goal.status === 'active'),
+    [goals],
+  );
 
-  const completedGoals = goals.filter((goal) => goal.status === 'completed');
+  /*
+   * Completed goals.
+   */
+  const completedGoals = useMemo(
+    () => goals.filter((goal) => goal.status === 'completed'),
+    [goals],
+  );
 
+  /*
+   * Open contribution modal.
+   */
   const openContributionModal = (goal: Goal) => {
     const defaultAmount =
       goal.monthlyContribution > 0 ? goal.monthlyContribution : '';
 
     setContributionAmount(defaultAmount.toString());
-
     setContributionGoal(goal);
   };
 
+  /*
+   * Close contribution modal.
+   */
   const closeContributionModal = () => {
     setContributionGoal(null);
     setContributionAmount('');
   };
 
+  /*
+   * Add contribution.
+   *
+   * Currently this updates local React state only.
+   * Persistence will be handled by the backend later.
+   */
   const addContribution = () => {
     if (!contributionGoal) {
       return;
@@ -332,10 +389,7 @@ function Goals() {
                       </div>
 
                       <p className="mt-1 text-sm text-slate-500">
-                        Money is being saved in{' '}
-                        <span className="font-medium text-slate-700">
-                          {goal.account}
-                        </span>
+                        Track your progress toward this savings goal.
                       </p>
                     </div>
 
@@ -370,7 +424,10 @@ function Goals() {
                       <div
                         className="h-full rounded-full bg-slate-900 transition-all"
                         style={{
-                          width: `${analysis.progressPercentage}%`,
+                          width: `${Math.min(
+                            analysis.progressPercentage,
+                            100,
+                          )}%`,
                         }}
                       />
                     </div>

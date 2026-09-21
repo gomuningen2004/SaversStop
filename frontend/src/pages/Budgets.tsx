@@ -34,9 +34,7 @@ function Budgets() {
   const navigate = useNavigate();
 
   const [budgets, setBudgets] = useState<Budget[]>([]);
-
   const [categories, setCategories] = useState<Category[]>([]);
-
   const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -50,6 +48,12 @@ function Budgets() {
   const [categoryId, setCategoryId] = useState('');
 
   const [amount, setAmount] = useState('');
+
+  /*
+   * ---------------------------------------------------------
+   * LOAD DATA
+   * ---------------------------------------------------------
+   */
 
   useEffect(() => {
     const loadData = async () => {
@@ -76,11 +80,82 @@ function Budgets() {
             transactionsResponse.json(),
           ]);
 
-        setBudgets(budgetsData.budgets ?? []);
+        /*
+         * -----------------------------------------------------
+         * NORMALIZE BUDGETS
+         *
+         * JSON:
+         *   category_id
+         *
+         * Frontend:
+         *   categoryId
+         * -----------------------------------------------------
+         */
 
-        setCategories(categoriesData.categories ?? []);
+        const normalizedBudgets: Budget[] = (budgetsData.budgets ?? []).map(
+          (budget: {
+            id: string;
+            month: string;
+            category_id: string;
+            amount: number;
+          }) => ({
+            id: budget.id,
+            month: budget.month,
+            categoryId: budget.category_id,
+            amount: Number(budget.amount),
+          }),
+        );
 
-        setTransactions(transactionsData.transactions ?? []);
+        /*
+         * -----------------------------------------------------
+         * NORMALIZE CATEGORIES
+         * -----------------------------------------------------
+         */
+
+        const normalizedCategories: Category[] = (
+          categoriesData.categories ?? []
+        ).map((category: { id: string; name: string; active: boolean }) => ({
+          id: category.id,
+          name: category.name,
+          active: category.active,
+        }));
+
+        /*
+         * -----------------------------------------------------
+         * NORMALIZE TRANSACTIONS
+         *
+         * JSON uses snake_case.
+         * Frontend types use camelCase.
+         * -----------------------------------------------------
+         */
+
+        const normalizedTransactions: Transaction[] = (
+          transactionsData.transactions ?? []
+        ).map(
+          (transaction: {
+            id: string;
+            transaction_date: string;
+            reason?: string | null;
+            category_id: string;
+            account_id: string;
+            amount: number;
+            type: 'sent' | 'received';
+            transfer_id?: string | null;
+          }) => ({
+            id: transaction.id,
+            transactionDate: transaction.transaction_date,
+            reason: transaction.reason,
+            categoryId: transaction.category_id,
+            accountId: transaction.account_id,
+            amount: Number(transaction.amount),
+            type: transaction.type,
+            transferId: transaction.transfer_id ?? null,
+          }),
+        );
+
+        setBudgets(normalizedBudgets);
+        setCategories(normalizedCategories);
+        setTransactions(normalizedTransactions);
       } catch (error) {
         console.error('Failed to load budget data:', error);
       } finally {
@@ -90,6 +165,12 @@ function Budgets() {
 
     loadData();
   }, []);
+
+  /*
+   * ---------------------------------------------------------
+   * BUDGET ANALYSIS
+   * ---------------------------------------------------------
+   */
 
   const analyses = useMemo(
     () =>
@@ -101,6 +182,19 @@ function Budgets() {
 
   const totals = useMemo(() => getBudgetTotals(analyses), [analyses]);
 
+  /*
+   * ---------------------------------------------------------
+   * AVAILABLE CATEGORIES
+   * ---------------------------------------------------------
+   *
+   * A category can only have one budget per month.
+   *
+   * The old code excluded category ID 5 because IDs were
+   * numeric. IDs are now UUIDs, so we exclude the "salary"
+   * category by name instead.
+   * ---------------------------------------------------------
+   */
+
   const availableCategories = useMemo(() => {
     const usedCategoryIds = budgets
       .filter((budget) => budget.month === selectedMonth)
@@ -110,15 +204,30 @@ function Budgets() {
       .map((budget) => budget.categoryId);
 
     return categories.filter(
-      (category) => category.id !== 5 && !usedCategoryIds.includes(category.id),
+      (category) =>
+        category.active &&
+        category.name.toLowerCase() !== 'salary' &&
+        !usedCategoryIds.includes(category.id),
     );
   }, [budgets, categories, selectedMonth, editingBudget]);
+
+  /*
+   * ---------------------------------------------------------
+   * ALERT GROUPS
+   * ---------------------------------------------------------
+   */
 
   const criticalBudgets = analyses.filter(
     (item) => item.status === 'critical' || item.status === 'exceeded',
   );
 
   const warningBudgets = analyses.filter((item) => item.status === 'warning');
+
+  /*
+   * ---------------------------------------------------------
+   * MONTH NAVIGATION
+   * ---------------------------------------------------------
+   */
 
   const changeMonth = (direction: number) => {
     const [year, month] = selectedMonth.split('-');
@@ -130,6 +239,12 @@ function Budgets() {
     );
   };
 
+  /*
+   * ---------------------------------------------------------
+   * MODAL
+   * ---------------------------------------------------------
+   */
+
   const openAddModal = () => {
     setEditingBudget(null);
     setCategoryId('');
@@ -139,7 +254,7 @@ function Budgets() {
 
   const openEditModal = (budget: Budget) => {
     setEditingBudget(budget);
-    setCategoryId(budget.categoryId.toString());
+    setCategoryId(budget.categoryId);
     setAmount(budget.amount.toString());
     setShowModal(true);
   };
@@ -151,23 +266,33 @@ function Budgets() {
     setAmount('');
   };
 
-  const saveBudget = () => {
-    const parsedCategoryId = Number(categoryId);
+  /*
+   * ---------------------------------------------------------
+   * SAVE BUDGET
+   * ---------------------------------------------------------
+   */
 
+  const saveBudget = () => {
     const parsedAmount = Number(amount);
 
-    if (!Number.isFinite(parsedCategoryId) || parsedCategoryId <= 0) {
+    if (!categoryId) {
+      alert('Please select a category.');
       return;
     }
 
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      alert('Please enter a valid budget amount.');
       return;
     }
+
+    /*
+     * Prevent duplicate category budgets in the same month.
+     */
 
     const duplicate = budgets.some(
       (budget) =>
         budget.month === selectedMonth &&
-        budget.categoryId === parsedCategoryId &&
+        budget.categoryId === categoryId &&
         budget.id !== editingBudget?.id,
     );
 
@@ -176,6 +301,12 @@ function Budgets() {
       return;
     }
 
+    /*
+     * -------------------------------------------------------
+     * EDIT EXISTING BUDGET
+     * -------------------------------------------------------
+     */
+
     if (editingBudget) {
       setBudgets((currentBudgets) =>
         currentBudgets.map((budget) =>
@@ -183,39 +314,48 @@ function Budgets() {
             ? {
                 ...budget,
                 month: selectedMonth,
-                categoryId: parsedCategoryId,
+                categoryId,
                 amount: parsedAmount,
               }
             : budget,
         ),
       );
-    } else {
-      const nextId =
-        budgets.length > 0
-          ? Math.max(...budgets.map((budget) => budget.id)) + 1
-          : 1;
 
-      setBudgets((currentBudgets) => [
-        ...currentBudgets,
-        {
-          id: nextId,
-          month: selectedMonth,
-          categoryId: parsedCategoryId,
-          amount: parsedAmount,
-        },
-      ]);
+      closeModal();
+      return;
     }
+
+    /*
+     * -------------------------------------------------------
+     * ADD NEW BUDGET
+     * -------------------------------------------------------
+     */
+
+    const newBudget: Budget = {
+      id: crypto.randomUUID(),
+      month: selectedMonth,
+      categoryId,
+      amount: parsedAmount,
+    };
+
+    setBudgets((currentBudgets) => [...currentBudgets, newBudget]);
 
     closeModal();
   };
+
+  /*
+   * ---------------------------------------------------------
+   * DELETE BUDGET
+   * ---------------------------------------------------------
+   */
 
   const deleteBudget = (budget: Budget) => {
     const category = categories.find((item) => item.id === budget.categoryId);
 
     const confirmed = window.confirm(
-      `Delete the ${category?.name ?? ''} budget for ${formatBudgetMonth(
-        budget.month,
-      )}?`,
+      `Delete the ${
+        category?.name ?? ''
+      } budget for ${formatBudgetMonth(budget.month)}?`,
     );
 
     if (!confirmed) {
@@ -227,6 +367,12 @@ function Budgets() {
     );
   };
 
+  /*
+   * ---------------------------------------------------------
+   * LOADING
+   * ---------------------------------------------------------
+   */
+
   if (loading) {
     return (
       <main className="min-h-[calc(100vh-64px)] px-6 py-8">
@@ -237,10 +383,17 @@ function Budgets() {
     );
   }
 
+  /*
+   * ---------------------------------------------------------
+   * UI
+   * ---------------------------------------------------------
+   */
+
   return (
     <main className="min-h-[calc(100vh-64px)] px-6 py-8 pb-24">
       <div className="mx-auto max-w-6xl">
         {/* Header */}
+
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">Budgets</h1>
@@ -270,6 +423,7 @@ function Budgets() {
         </div>
 
         {/* Month selector */}
+
         <div className="mb-6 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
           <button
             onClick={() => changeMonth(-1)}
@@ -300,6 +454,7 @@ function Budgets() {
         </div>
 
         {/* Summary */}
+
         <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <p className="text-sm text-slate-500">Total Budget</p>
@@ -341,6 +496,7 @@ function Budgets() {
         </div>
 
         {/* Alerts */}
+
         {criticalBudgets.length > 0 && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-5">
             <div className="flex gap-3">
@@ -353,7 +509,9 @@ function Budgets() {
 
                 <p className="mt-1 text-sm text-red-700">
                   {criticalBudgets.length === 1
-                    ? `${criticalBudgets[0].category?.name ?? 'A category'} is at or above its budget.`
+                    ? `${
+                        criticalBudgets[0].category?.name ?? 'A category'
+                      } is at or above its budget.`
                     : `${criticalBudgets.length} categories are at or above their budgets.`}
                 </p>
               </div>
@@ -374,7 +532,9 @@ function Budgets() {
 
                 <p className="mt-1 text-sm text-amber-700">
                   {warningBudgets.length === 1
-                    ? `${warningBudgets[0].category?.name ?? 'A category'} is almost at its budget.`
+                    ? `${
+                        warningBudgets[0].category?.name ?? 'A category'
+                      } is almost at its budget.`
                     : `${warningBudgets.length} categories are using 75% or more of their budgets.`}
                 </p>
               </div>
@@ -383,6 +543,7 @@ function Budgets() {
         )}
 
         {/* Empty state */}
+
         {analyses.length === 0 && (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
             <Target size={40} className="mx-auto text-slate-400" />
@@ -407,6 +568,7 @@ function Budgets() {
         )}
 
         {/* Budget table */}
+
         {analyses.length > 0 && (
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <div className="hidden border-b border-slate-100 px-6 py-4 md:grid md:grid-cols-[1.5fr_1fr_1fr_1fr_1.5fr_auto] md:gap-4">
@@ -460,6 +622,7 @@ function Budgets() {
                       className="p-5 md:grid md:grid-cols-[1.5fr_1fr_1fr_1fr_1.5fr_auto] md:items-center md:gap-4 md:px-6"
                     >
                       {/* Category */}
+
                       <div className="flex items-center justify-between md:block">
                         <div className="flex items-center gap-3">
                           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100">
@@ -479,6 +642,7 @@ function Budgets() {
                       </div>
 
                       {/* Budget */}
+
                       <div className="mt-4 flex items-center justify-between md:mt-0 md:block md:text-right">
                         <span className="text-xs text-slate-500 md:hidden">
                           Budget
@@ -490,6 +654,7 @@ function Budgets() {
                       </div>
 
                       {/* Spent */}
+
                       <div className="mt-2 flex items-center justify-between md:mt-0 md:block md:text-right">
                         <span className="text-xs text-slate-500 md:hidden">
                           Spent
@@ -501,6 +666,7 @@ function Budgets() {
                       </div>
 
                       {/* Remaining */}
+
                       <div className="mt-2 flex items-center justify-between md:mt-0 md:block md:text-right">
                         <span className="text-xs text-slate-500 md:hidden">
                           Remaining
@@ -518,6 +684,7 @@ function Budgets() {
                       </div>
 
                       {/* Progress */}
+
                       <div className="mt-4 md:mt-0">
                         <div className="mb-1.5 flex items-center justify-between">
                           <span className="text-xs text-slate-500 md:hidden">
@@ -550,6 +717,7 @@ function Budgets() {
                       </div>
 
                       {/* Actions */}
+
                       <div className="mt-4 flex justify-end gap-1 md:mt-0">
                         <button
                           onClick={() => openEditModal(budget)}
@@ -576,6 +744,7 @@ function Budgets() {
         )}
 
         {/* Status legend */}
+
         {analyses.length > 0 && (
           <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-500">
             <div className="flex items-center gap-2">
@@ -602,6 +771,7 @@ function Budgets() {
       </div>
 
       {/* Add / Edit Modal */}
+
       {showModal && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
@@ -636,6 +806,23 @@ function Budgets() {
                 className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-400"
               >
                 <option value="">Select category</option>
+
+                {/*
+                 * When editing, the existing category is normally
+                 * excluded from availableCategories. Add it back
+                 * so it remains selectable.
+                 */}
+
+                {editingBudget &&
+                  !availableCategories.some(
+                    (category) => category.id === editingBudget.categoryId,
+                  ) && (
+                    <option value={editingBudget.categoryId}>
+                      {categories.find(
+                        (category) => category.id === editingBudget.categoryId,
+                      )?.name ?? 'Current category'}
+                    </option>
+                  )}
 
                 {availableCategories.map((category) => (
                   <option key={category.id} value={category.id}>
