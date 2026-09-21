@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -9,47 +9,41 @@ import {
   Wallet,
 } from 'lucide-react';
 
-import type { Account, Goal, Transaction } from '../types';
-
-type RawAccount = {
-  id: string;
-  name: string;
-  account_type_id: string;
-  current_balance: number;
-  active: boolean;
-};
-
-type RawTransaction = {
-  id: string;
-  transaction_date: string;
-  reason?: string | null;
-  category_id: string;
-  account_id: string;
-  amount: number;
-  type: 'sent' | 'received';
-  transfer_id?: string | null;
-};
-
-type RawGoal = {
-  id: string;
-  name: string;
-  target_amount: number;
-  saved_amount: number;
-  monthly_contribution: number;
-  target_date: string;
-  status: 'active' | 'completed';
-};
-
 type ForecastMonth = {
   month: string;
   label: string;
-  startingBalance: number;
-  endingBalance: number;
-  historicalSpending: number;
-  expectedIncome: number;
-  expectedExpenses: number;
-  goalContributions: number;
-  netChange: number;
+
+  starting_balance: number;
+  ending_balance: number;
+
+  historical_spending: number;
+  expected_income: number;
+  expected_expenses: number;
+  goal_contributions: number;
+
+  net_change: number;
+};
+
+type ForecastResponse = {
+  current_balance: number;
+
+  current_month: string;
+
+  current_month_income: number;
+  current_month_expenses: number;
+
+  historical_months_used: number;
+
+  historical_monthly_income: number;
+  historical_monthly_spending: number;
+
+  monthly_goal_contributions: number;
+
+  end_of_month_forecast: number;
+
+  forecast_months: ForecastMonth[];
+
+  methodology: string;
 };
 
 const currencyFormatter = new Intl.NumberFormat('en-IN', {
@@ -59,7 +53,9 @@ const currencyFormatter = new Intl.NumberFormat('en-IN', {
   maximumFractionDigits: 2,
 });
 
-const formatCurrency = (amount: number) => currencyFormatter.format(amount);
+const formatCurrency = (amount: number) => {
+  return currencyFormatter.format(amount);
+};
 
 const formatCompactCurrency = (amount: number) => {
   if (Math.abs(amount) >= 100000) {
@@ -73,380 +69,51 @@ const formatCompactCurrency = (amount: number) => {
   return formatCurrency(amount);
 };
 
-function getMonthKey(date: string) {
-  return date.slice(0, 7);
-}
-
-function getMonthLabel(month: string) {
-  const [year, monthNumber] = month.split('-');
-
-  const date = new Date(Number(year), Number(monthNumber) - 1, 1);
-
-  return date.toLocaleDateString('en-IN', {
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-function getRecentMonths(count: number) {
-  const months: string[] = [];
-  const now = new Date();
-
-  for (let i = 0; i < count; i++) {
-    const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
-
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-
-    months.push(`${year}-${month}`);
-  }
-
-  return months;
-}
-
 function Forecast() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [goals, setGoals] = useState<Goal[]>([]);
+  const [forecast, setForecast] = useState<ForecastResponse | null>(null);
+
   const [loading, setLoading] = useState(true);
+
+  const [error, setError] = useState<string | null>(null);
 
   /*
    * ---------------------------------------------------------
-   * LOAD DATA
+   * LOAD FORECAST
    * ---------------------------------------------------------
    */
 
   useEffect(() => {
-    const loadData = async () => {
+    const loadForecast = async () => {
       try {
-        const [accountsResponse, transactionsResponse, goalsResponse] =
-          await Promise.all([
-            fetch('/data/accounts.json'),
-            fetch('/data/transactions.json'),
-            fetch('/data/goals.json'),
-          ]);
+        setLoading(true);
+        setError(null);
 
-        if (!accountsResponse.ok) {
-          throw new Error(
-            `Accounts request failed: ${accountsResponse.status}`,
-          );
+        const response = await fetch('/api/forecast?months=3&history_months=6');
+
+        if (!response.ok) {
+          throw new Error(`Forecast request failed: ${response.status}`);
         }
 
-        if (!transactionsResponse.ok) {
-          throw new Error(
-            `Transactions request failed: ${transactionsResponse.status}`,
-          );
-        }
+        const data = (await response.json()) as ForecastResponse;
 
-        if (!goalsResponse.ok) {
-          throw new Error(`Goals request failed: ${goalsResponse.status}`);
-        }
-
-        const accountsData = (await accountsResponse.json()) as {
-          accounts: RawAccount[];
-        };
-
-        const transactionsData = (await transactionsResponse.json()) as {
-          transactions: RawTransaction[];
-        };
-
-        const goalsData = (await goalsResponse.json()) as {
-          goals: RawGoal[];
-        };
-
-        /*
-         * -----------------------------------------------------
-         * NORMALIZE ACCOUNTS
-         * -----------------------------------------------------
-         */
-
-        const normalizedAccounts: Account[] = accountsData.accounts.map(
-          (account) => ({
-            id: account.id,
-            name: account.name,
-            accountTypeId: account.account_type_id,
-            currentBalance: Number(account.current_balance),
-            active: account.active,
-          }),
-        );
-
-        /*
-         * -----------------------------------------------------
-         * NORMALIZE TRANSACTIONS
-         * -----------------------------------------------------
-         */
-
-        const normalizedTransactions: Transaction[] =
-          transactionsData.transactions.map((transaction) => ({
-            id: transaction.id,
-            transactionDate: transaction.transaction_date,
-            reason: transaction.reason ?? null,
-            categoryId: transaction.category_id,
-            accountId: transaction.account_id,
-            amount: Number(transaction.amount),
-            type: transaction.type,
-            transferId: transaction.transfer_id ?? null,
-          }));
-
-        /*
-         * -----------------------------------------------------
-         * NORMALIZE GOALS
-         * -----------------------------------------------------
-         */
-
-        const normalizedGoals: Goal[] = goalsData.goals.map((goal) => ({
-          id: goal.id,
-          name: goal.name,
-          targetAmount: Number(goal.target_amount),
-          savedAmount: Number(goal.saved_amount),
-          monthlyContribution: Number(goal.monthly_contribution),
-          targetDate: goal.target_date,
-          status: goal.status,
-        }));
-
-        setAccounts(normalizedAccounts);
-        setTransactions(normalizedTransactions);
-        setGoals(normalizedGoals);
-
-        console.log('Forecast accounts:', normalizedAccounts);
-
-        console.log('Forecast transactions:', normalizedTransactions);
-
-        console.log('Forecast goals:', normalizedGoals);
+        setForecast(data);
       } catch (error) {
-        console.error('Failed to load forecast data:', error);
+        console.error('Failed to load forecast:', error);
+
+        setError('Unable to load your financial forecast.');
       } finally {
         setLoading(false);
       }
     };
 
-    loadData();
+    loadForecast();
   }, []);
 
   /*
    * ---------------------------------------------------------
-   * CURRENT BALANCE
-   *
-   * Asset accounts increase the available balance.
-   * Liability accounts are not currently included because
-   * account classification is not loaded on this page.
-   *
-   * For now, use all active account current balances.
+   * PAGE TITLE
    * ---------------------------------------------------------
    */
-
-  const currentBalance = useMemo(() => {
-    return accounts
-      .filter((account) => account.active)
-      .reduce((total, account) => total + account.currentBalance, 0);
-  }, [accounts]);
-
-  /*
-   * ---------------------------------------------------------
-   * FINANCIAL TRANSACTIONS
-   *
-   * Self transfers are excluded.
-   * ---------------------------------------------------------
-   */
-
-  const financialTransactions = useMemo(() => {
-    return transactions.filter(
-      (transaction) => transaction.transferId === null,
-    );
-  }, [transactions]);
-
-  /*
-   * ---------------------------------------------------------
-   * HISTORICAL MONTHLY SPENDING
-   *
-   * Calculate the average monthly spending from
-   * actual historical transactions.
-   *
-   * Only completed months are used when possible.
-   * ---------------------------------------------------------
-   */
-
-  const historicalMonthlySpending = useMemo(() => {
-    const monthlyExpenses = new Map<string, number>();
-
-    financialTransactions
-      .filter((transaction) => transaction.type === 'sent')
-      .forEach((transaction) => {
-        const month = getMonthKey(transaction.transactionDate);
-
-        const current = monthlyExpenses.get(month) ?? 0;
-
-        monthlyExpenses.set(month, current + transaction.amount);
-      });
-
-    const values = Array.from(monthlyExpenses.values());
-
-    if (values.length === 0) {
-      return 0;
-    }
-
-    return values.reduce((total, value) => total + value, 0) / values.length;
-  }, [financialTransactions]);
-
-  /*
-   * ---------------------------------------------------------
-   * HISTORICAL MONTHLY INCOME
-   * ---------------------------------------------------------
-   */
-
-  const historicalMonthlyIncome = useMemo(() => {
-    const monthlyIncome = new Map<string, number>();
-
-    financialTransactions
-      .filter((transaction) => transaction.type === 'received')
-      .forEach((transaction) => {
-        const month = getMonthKey(transaction.transactionDate);
-
-        const current = monthlyIncome.get(month) ?? 0;
-
-        monthlyIncome.set(month, current + transaction.amount);
-      });
-
-    const values = Array.from(monthlyIncome.values());
-
-    if (values.length === 0) {
-      return 0;
-    }
-
-    return values.reduce((total, value) => total + value, 0) / values.length;
-  }, [financialTransactions]);
-
-  /*
-   * ---------------------------------------------------------
-   * GOAL CONTRIBUTIONS
-   *
-   * Only active goals with a future target date are included.
-   * ---------------------------------------------------------
-   */
-
-  const monthlyGoalContributions = useMemo(() => {
-    return goals
-      .filter(
-        (goal) => goal.status === 'active' && goal.monthlyContribution > 0,
-      )
-      .reduce((total, goal) => total + goal.monthlyContribution, 0);
-  }, [goals]);
-
-  /*
-   * ---------------------------------------------------------
-   * CURRENT MONTH ACTUALS
-   * ---------------------------------------------------------
-   */
-
-  const currentMonthKey = useMemo(() => {
-    const now = new Date();
-
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
-      2,
-      '0',
-    )}`;
-  }, []);
-
-  const currentMonthIncome = useMemo(() => {
-    return financialTransactions
-      .filter(
-        (transaction) =>
-          transaction.type === 'received' &&
-          getMonthKey(transaction.transactionDate) === currentMonthKey,
-      )
-      .reduce((total, transaction) => total + transaction.amount, 0);
-  }, [financialTransactions, currentMonthKey]);
-
-  const currentMonthExpenses = useMemo(() => {
-    return financialTransactions
-      .filter(
-        (transaction) =>
-          transaction.type === 'sent' &&
-          getMonthKey(transaction.transactionDate) === currentMonthKey,
-      )
-      .reduce((total, transaction) => total + transaction.amount, 0);
-  }, [financialTransactions, currentMonthKey]);
-
-  /*
-   * ---------------------------------------------------------
-   * FORECAST
-   *
-   * Recurring transactions are intentionally NOT used.
-   *
-   * Expected monthly expenses:
-   * historical average spending.
-   *
-   * Expected monthly income:
-   * historical average income.
-   *
-   * Goal contributions:
-   * active goal monthly contributions.
-   * ---------------------------------------------------------
-   */
-
-  const forecastMonths = useMemo<ForecastMonth[]>(() => {
-    const months = getRecentMonths(3);
-
-    let balance = currentBalance;
-
-    return months.map((month, index) => {
-      const expectedIncome =
-        index === 0 && currentMonthIncome > 0
-          ? currentMonthIncome
-          : historicalMonthlyIncome;
-
-      const expectedExpenses =
-        index === 0 && currentMonthExpenses > 0
-          ? currentMonthExpenses
-          : historicalMonthlySpending;
-
-      const goalContributions = monthlyGoalContributions;
-
-      const netChange = expectedIncome - expectedExpenses - goalContributions;
-
-      const startingBalance = balance;
-
-      const endingBalance = startingBalance + netChange;
-
-      balance = endingBalance;
-
-      return {
-        month,
-        label: getMonthLabel(month),
-        startingBalance,
-        endingBalance,
-        historicalSpending: historicalMonthlySpending,
-        expectedIncome,
-        expectedExpenses,
-        goalContributions,
-        netChange,
-      };
-    });
-  }, [
-    currentBalance,
-    currentMonthIncome,
-    currentMonthExpenses,
-    historicalMonthlyIncome,
-    historicalMonthlySpending,
-    monthlyGoalContributions,
-  ]);
-
-  const forecast = useMemo(() => {
-    const firstMonth = forecastMonths[0];
-
-    return {
-      currentBalance,
-      currentMonthIncome,
-      currentMonthExpenses,
-      endOfMonthForecast: firstMonth?.endingBalance ?? currentBalance,
-      forecastMonths,
-    };
-  }, [
-    currentBalance,
-    currentMonthIncome,
-    currentMonthExpenses,
-    forecastMonths,
-  ]);
 
   useEffect(() => {
     document.title = 'Financial Forecast | SaversStop';
@@ -460,20 +127,52 @@ function Forecast() {
 
   if (loading) {
     return (
-      <main className="px-6 py-8">
-        <p className="text-sm text-slate-500">Loading forecast...</p>
+      <main className="min-h-screen px-6 py-8">
+        <p className="text-sm text-slate-500">
+          Calculating your financial forecast...
+        </p>
       </main>
     );
   }
 
-  const currentMonth = forecast.forecastMonths[0];
+  /*
+   * ---------------------------------------------------------
+   * ERROR
+   * ---------------------------------------------------------
+   */
 
-  const monthlyNet = currentMonth?.netChange ?? 0;
+  if (error || !forecast) {
+    return (
+      <main className="min-h-screen px-6 py-8">
+        <div className="mx-auto max-w-6xl">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+            <h1 className="font-semibold text-red-900">Forecast unavailable</h1>
+
+            <p className="mt-1 text-sm text-red-700">
+              {error ?? 'Something went wrong while calculating your forecast.'}
+            </p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  /*
+   * ---------------------------------------------------------
+   * CURRENT MONTH
+   * ---------------------------------------------------------
+   */
+
+  const currentMonth = forecast.forecast_months[0];
+
+  const monthlyNet = currentMonth?.net_change ?? 0;
 
   return (
     <main className="min-h-screen px-6 py-8 pb-24">
       <div className="mx-auto max-w-6xl">
-        {/* HEADER */}
+        {/* ===================================================
+            HEADER
+        =================================================== */}
 
         <div className="mb-8">
           <div className="flex items-center gap-3">
@@ -493,7 +192,9 @@ function Forecast() {
           </div>
         </div>
 
-        {/* CURRENT POSITION */}
+        {/* ===================================================
+            CURRENT POSITION
+        =================================================== */}
 
         <section className="mb-8">
           <div className="mb-4">
@@ -505,6 +206,8 @@ function Forecast() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* CURRENT BALANCE */}
+
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Wallet size={16} />
@@ -512,9 +215,11 @@ function Forecast() {
               </div>
 
               <p className="mt-3 text-2xl font-semibold text-slate-900">
-                {formatCurrency(forecast.currentBalance)}
+                {formatCurrency(forecast.current_balance)}
               </p>
             </div>
+
+            {/* INCOME */}
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -523,9 +228,11 @@ function Forecast() {
               </div>
 
               <p className="mt-3 text-2xl font-semibold text-emerald-600">
-                {formatCurrency(forecast.currentMonthIncome)}
+                {formatCurrency(forecast.current_month_income)}
               </p>
             </div>
+
+            {/* EXPENSES */}
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -534,9 +241,11 @@ function Forecast() {
               </div>
 
               <p className="mt-3 text-2xl font-semibold text-red-600">
-                {formatCurrency(forecast.currentMonthExpenses)}
+                {formatCurrency(forecast.current_month_expenses)}
               </p>
             </div>
+
+            {/* FORECAST */}
 
             <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
               <div className="flex items-center gap-2 text-sm text-indigo-700">
@@ -545,13 +254,15 @@ function Forecast() {
               </div>
 
               <p className="mt-3 text-2xl font-semibold text-indigo-900">
-                {formatCurrency(forecast.endOfMonthForecast)}
+                {formatCurrency(forecast.end_of_month_forecast)}
               </p>
             </div>
           </div>
         </section>
 
-        {/* FORECAST EXPLANATION */}
+        {/* ===================================================
+            FORECAST EXPLANATION
+        =================================================== */}
 
         {currentMonth && (
           <section className="mb-8">
@@ -567,36 +278,44 @@ function Forecast() {
                   </h2>
 
                   <p className="mt-1 text-sm text-slate-500">
-                    SaversStop uses your historical transaction activity and
-                    active goal contributions to estimate your future balance.
+                    SaversStop combines your recent financial activity with your
+                    active goals to estimate your future balance.
                   </p>
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-4">
+                {/* INCOME */}
+
                 <div>
                   <p className="text-sm text-slate-500">Expected income</p>
 
                   <p className="mt-1 text-lg font-semibold text-emerald-600">
-                    {formatCurrency(currentMonth.expectedIncome)}
+                    {formatCurrency(currentMonth.expected_income)}
                   </p>
                 </div>
+
+                {/* EXPENSES */}
 
                 <div>
                   <p className="text-sm text-slate-500">Expected expenses</p>
 
                   <p className="mt-1 text-lg font-semibold text-red-600">
-                    {formatCurrency(currentMonth.expectedExpenses)}
+                    {formatCurrency(currentMonth.expected_expenses)}
                   </p>
                 </div>
+
+                {/* GOALS */}
 
                 <div>
                   <p className="text-sm text-slate-500">Planned goals</p>
 
                   <p className="mt-1 text-lg font-semibold text-slate-900">
-                    {formatCurrency(currentMonth.goalContributions)}
+                    {formatCurrency(currentMonth.goal_contributions)}
                   </p>
                 </div>
+
+                {/* NET */}
 
                 <div>
                   <p className="text-sm text-slate-500">Expected net change</p>
@@ -607,6 +326,7 @@ function Forecast() {
                     }`}
                   >
                     {monthlyNet >= 0 ? '+' : ''}
+
                     {formatCurrency(monthlyNet)}
                   </p>
                 </div>
@@ -615,7 +335,9 @@ function Forecast() {
           </section>
         )}
 
-        {/* 3 MONTH FORECAST */}
+        {/* ===================================================
+            3 MONTH FORECAST
+        =================================================== */}
 
         <section className="mb-8">
           <div className="mb-4">
@@ -629,8 +351,8 @@ function Forecast() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
-            {forecast.forecastMonths.map((month, index) => {
-              const positive = month.netChange >= 0;
+            {forecast.forecast_months.map((month, index) => {
+              const positive = month.net_change >= 0;
 
               return (
                 <div
@@ -672,7 +394,7 @@ function Forecast() {
                   </div>
 
                   <p className="mt-6 text-2xl font-semibold text-slate-900">
-                    {formatCurrency(month.endingBalance)}
+                    {formatCurrency(month.ending_balance)}
                   </p>
 
                   <p
@@ -681,7 +403,7 @@ function Forecast() {
                     }`}
                   >
                     {positive ? '+' : ''}
-                    {formatCurrency(month.netChange)} expected change
+                    {formatCurrency(month.net_change)} expected change
                   </p>
 
                   <div className="mt-6 space-y-3 border-t border-slate-100 pt-4">
@@ -689,7 +411,7 @@ function Forecast() {
                       <span className="text-slate-500">Expected income</span>
 
                       <span className="font-medium text-emerald-600">
-                        {formatCompactCurrency(month.expectedIncome)}
+                        {formatCompactCurrency(month.expected_income)}
                       </span>
                     </div>
 
@@ -697,7 +419,7 @@ function Forecast() {
                       <span className="text-slate-500">Expected expenses</span>
 
                       <span className="font-medium text-red-600">
-                        {formatCompactCurrency(month.expectedExpenses)}
+                        {formatCompactCurrency(month.expected_expenses)}
                       </span>
                     </div>
 
@@ -705,7 +427,7 @@ function Forecast() {
                       <span className="text-slate-500">Goal contributions</span>
 
                       <span className="font-medium text-slate-700">
-                        {formatCompactCurrency(month.goalContributions)}
+                        {formatCompactCurrency(month.goal_contributions)}
                       </span>
                     </div>
                   </div>
@@ -715,7 +437,9 @@ function Forecast() {
           </div>
         </section>
 
-        {/* BREAKDOWN */}
+        {/* ===================================================
+            BREAKDOWN
+        =================================================== */}
 
         <section>
           <div className="mb-4">
@@ -731,13 +455,17 @@ function Forecast() {
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <div className="grid grid-cols-2 gap-4 border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-5">
               <div>Month</div>
+
               <div>Historical spending</div>
+
               <div>Goals</div>
+
               <div>Expected income</div>
+
               <div>Forecast balance</div>
             </div>
 
-            {forecast.forecastMonths.map((month) => (
+            {forecast.forecast_months.map((month) => (
               <div
                 key={month.month}
                 className="grid grid-cols-2 gap-4 border-b border-slate-100 px-5 py-5 last:border-b-0 md:grid-cols-5 md:items-center"
@@ -746,21 +474,23 @@ function Forecast() {
                   <p className="font-medium text-slate-900">{month.label}</p>
 
                   <p className="mt-1 text-xs text-slate-500">
-                    Starting: {formatCompactCurrency(month.startingBalance)}
+                    Starting: {formatCompactCurrency(month.starting_balance)}
                   </p>
                 </div>
 
                 <div>
                   <p className="font-medium text-slate-800">
-                    {formatCurrency(month.historicalSpending)}
+                    {formatCurrency(month.historical_spending)}
                   </p>
 
-                  <p className="text-xs text-slate-400">monthly average</p>
+                  <p className="text-xs text-slate-400">
+                    weighted monthly average
+                  </p>
                 </div>
 
                 <div>
                   <p className="font-medium text-slate-800">
-                    {formatCurrency(month.goalContributions)}
+                    {formatCurrency(month.goal_contributions)}
                   </p>
 
                   <p className="text-xs text-slate-400">planned</p>
@@ -768,15 +498,21 @@ function Forecast() {
 
                 <div>
                   <p className="font-medium text-emerald-600">
-                    {formatCurrency(month.expectedIncome)}
+                    {formatCurrency(month.expected_income)}
                   </p>
 
                   <p className="text-xs text-slate-400">expected</p>
                 </div>
 
                 <div>
-                  <p className="font-semibold text-indigo-700">
-                    {formatCurrency(month.endingBalance)}
+                  <p
+                    className={`font-semibold ${
+                      month.ending_balance >= 0
+                        ? 'text-indigo-700'
+                        : 'text-red-700'
+                    }`}
+                  >
+                    {formatCurrency(month.ending_balance)}
                   </p>
                 </div>
               </div>
@@ -784,7 +520,9 @@ function Forecast() {
           </div>
         </section>
 
-        {/* METHODOLOGY */}
+        {/* ===================================================
+            METHODOLOGY
+        =================================================== */}
 
         <section className="mt-8">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -800,16 +538,12 @@ function Forecast() {
                 </p>
 
                 <p className="mt-1 text-sm leading-6 text-slate-500">
-                  SaversStop uses your historical transaction history to
-                  estimate normal monthly income and spending. Active goals are
-                  then deducted as planned monthly contributions. Self transfers
-                  are excluded because they do not change your overall wealth.
+                  {forecast.methodology}
                 </p>
 
                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Recurring transactions are not currently included in the
-                  forecast. This forecast is an estimate, not a prediction of
-                  exact future transactions.
+                  This is an estimate based on historical behaviour and planned
+                  goals. It does not predict individual future transactions.
                 </p>
               </div>
             </div>

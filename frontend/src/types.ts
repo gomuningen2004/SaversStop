@@ -104,6 +104,10 @@ export type TransactionsResponse = {
 export type Goal = {
   id: string;
   name: string;
+
+  accountId: string;
+  accountName: string | null;
+
   targetAmount: number;
   savedAmount: number;
   monthlyContribution: number;

@@ -8,6 +8,8 @@ from routes.transfers import router as transfers_router
 from routes.categories import router as categories_router
 from routes.people import router as people_router
 from routes.debt_interactions import router as debt_interactions_router
+from routes.goals import router as goals_router
+from routes.forecast import router as forecast_router
 
 app = FastAPI()
 
@@ -31,6 +33,8 @@ app.include_router(transfers_router)
 app.include_router(categories_router)
 app.include_router(people_router)
 app.include_router(debt_interactions_router)
+app.include_router(goals_router)
+app.include_router(forecast_router)
 
 
 @app.get("/")

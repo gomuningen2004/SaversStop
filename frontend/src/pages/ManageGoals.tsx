@@ -1,23 +1,43 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+
 import { ArrowLeft, Pencil, Plus, Trash2, X } from 'lucide-react';
+
 import { Link } from 'react-router-dom';
 
-import type { Goal } from '../types';
+import type { Account, Goal } from '../types';
+
+const API_URL = 'http://127.0.0.1:8000';
 
 type ModalMode = 'add' | 'edit';
 
 type RawGoal = {
   id: string;
   name: string;
-  target_amount: number;
-  saved_amount: number;
-  monthly_contribution: number;
+
+  account_id: string;
+  account_name: string | null;
+
+  target_amount: number | string;
+  saved_amount: number | string;
+  monthly_contribution: number | string;
+
   target_date: string;
+
   status: 'active' | 'completed';
 };
 
 type RawGoalsResponse = {
   goals: RawGoal[];
+};
+
+type RawAccountsResponse = {
+  accounts: Array<{
+    id: string;
+    name: string;
+    account_type_id: string;
+    current_balance: number | string;
+    active: boolean;
+  }>;
 };
 
 function formatCurrency(amount: number) {
@@ -45,15 +65,47 @@ function formatDate(date: string) {
   });
 }
 
+function normalizeGoal(goal: RawGoal): Goal {
+  return {
+    id: goal.id,
+    name: goal.name,
+
+    accountId: goal.account_id,
+    accountName: goal.account_name,
+
+    targetAmount: Number(goal.target_amount),
+    savedAmount: Number(goal.saved_amount),
+    monthlyContribution: Number(goal.monthly_contribution),
+
+    targetDate: goal.target_date,
+    status: goal.status,
+  };
+}
+
+function normalizeAccount(
+  account: RawAccountsResponse['accounts'][number],
+): Account {
+  return {
+    id: account.id,
+    name: account.name,
+    accountTypeId: account.account_type_id,
+    currentBalance: Number(account.current_balance),
+    active: account.active,
+  };
+}
+
 function ManageGoals() {
   const [goals, setGoals] = useState<Goal[]>([]);
+
+  const [accounts, setAccounts] = useState<Account[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   /*
-   * Goal modal
+   * Modal
    */
+
   const [showGoalModal, setShowGoalModal] = useState(false);
 
   const [modalMode, setModalMode] = useState<ModalMode>('add');
@@ -61,63 +113,88 @@ function ManageGoals() {
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
 
   /*
-   * Form fields
+   * Form
    */
+
   const [goalName, setGoalName] = useState('');
+  const [accountId, setAccountId] = useState('');
+
   const [targetAmount, setTargetAmount] = useState('');
+
   const [monthlyContribution, setMonthlyContribution] = useState('');
+
   const [targetDate, setTargetDate] = useState('');
 
   const [goalError, setGoalError] = useState('');
 
-  /*
-   * Load goals.
-   */
-  useEffect(() => {
-    const loadGoals = async () => {
-      try {
-        const response = await fetch('/data/goals.json');
+  const [savingGoal, setSavingGoal] = useState(false);
 
-        if (!response.ok) {
-          throw new Error('Failed to load goals');
+  const [deletingGoalId, setDeletingGoalId] = useState<string | null>(null);
+
+  /*
+   * ---------------------------------------------------------
+   * LOAD GOALS + ACCOUNTS
+   * ---------------------------------------------------------
+   */
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError('');
+
+        const [goalsResponse, accountsResponse] = await Promise.all([
+          fetch(`${API_URL}/api/goals`),
+          fetch(`${API_URL}/api/accounts`),
+        ]);
+
+        if (!goalsResponse.ok) {
+          throw new Error(`Goals request failed: ${goalsResponse.status}`);
         }
 
-        const goalsData = (await response.json()) as RawGoalsResponse;
+        if (!accountsResponse.ok) {
+          throw new Error(
+            `Accounts request failed: ${accountsResponse.status}`,
+          );
+        }
 
-        /*
-         * Convert JSON snake_case fields
-         * into frontend camelCase fields.
-         */
-        const normalizedGoals: Goal[] = (goalsData.goals ?? []).map((goal) => ({
-          id: goal.id,
-          name: goal.name,
-          targetAmount: Number(goal.target_amount),
-          savedAmount: Number(goal.saved_amount),
-          monthlyContribution: Number(goal.monthly_contribution),
-          targetDate: goal.target_date,
-          status: goal.status,
-        }));
+        const goalsData = (await goalsResponse.json()) as RawGoalsResponse;
+
+        const accountsData =
+          (await accountsResponse.json()) as RawAccountsResponse;
+
+        const normalizedGoals = (goalsData.goals ?? []).map(normalizeGoal);
+
+        const normalizedAccounts = (accountsData.accounts ?? [])
+          .filter((account) => account.active)
+          .map(normalizeAccount);
 
         setGoals(normalizedGoals);
+        setAccounts(normalizedAccounts);
       } catch (err) {
-        console.error(err);
-        setError('Unable to load goals.');
+        console.error('Failed to load goals/accounts:', err);
+
+        setError(err instanceof Error ? err.message : 'Unable to load goals.');
       } finally {
         setLoading(false);
       }
     };
 
-    loadGoals();
+    loadData();
   }, []);
 
   /*
-   * Open Add Goal modal.
+   * ---------------------------------------------------------
+   * OPEN ADD MODAL
+   * ---------------------------------------------------------
    */
+
   function openAddGoalModal() {
     setModalMode('add');
     setEditingGoalId(null);
 
     setGoalName('');
+    setAccountId('');
     setTargetAmount('');
     setMonthlyContribution('');
     setTargetDate('');
@@ -127,15 +204,21 @@ function ManageGoals() {
   }
 
   /*
-   * Open Edit Goal modal.
+   * ---------------------------------------------------------
+   * OPEN EDIT MODAL
+   * ---------------------------------------------------------
    */
+
   function openEditGoalModal(goal: Goal) {
     setModalMode('edit');
     setEditingGoalId(goal.id);
 
     setGoalName(goal.name);
+    setAccountId(goal.accountId);
     setTargetAmount(String(goal.targetAmount));
+
     setMonthlyContribution(String(goal.monthlyContribution));
+
     setTargetDate(goal.targetDate);
 
     setGoalError('');
@@ -143,13 +226,21 @@ function ManageGoals() {
   }
 
   /*
-   * Close modal.
+   * ---------------------------------------------------------
+   * CLOSE MODAL
+   * ---------------------------------------------------------
    */
+
   function closeGoalModal() {
+    if (savingGoal) {
+      return;
+    }
+
     setShowGoalModal(false);
     setEditingGoalId(null);
 
     setGoalName('');
+    setAccountId('');
     setTargetAmount('');
     setMonthlyContribution('');
     setTargetDate('');
@@ -158,9 +249,12 @@ function ManageGoals() {
   }
 
   /*
-   * Add or edit goal.
+   * ---------------------------------------------------------
+   * SUBMIT ADD / EDIT
+   * ---------------------------------------------------------
    */
-  function handleGoalSubmit(event: React.FormEvent<HTMLFormElement>) {
+
+  async function handleGoalSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setGoalError('');
@@ -171,8 +265,17 @@ function ManageGoals() {
 
     const numericMonthlyContribution = Number(monthlyContribution);
 
+    /*
+     * Validation
+     */
+
     if (!trimmedName) {
       setGoalError('Please enter a goal name.');
+      return;
+    }
+
+    if (!accountId) {
+      setGoalError('Please select an account for this goal.');
       return;
     }
 
@@ -202,8 +305,9 @@ function ManageGoals() {
     }
 
     /*
-     * Target date must be today or in the future.
+     * Target date must be today or future.
      */
+
     const selectedDate = new Date(`${targetDate}T00:00:00`);
 
     const today = new Date();
@@ -216,65 +320,146 @@ function ManageGoals() {
     }
 
     /*
+     * ---------------------------------------------------------
      * ADD
+     * ---------------------------------------------------------
      */
+
     if (modalMode === 'add') {
-      const newGoal: Goal = {
-        id: crypto.randomUUID(),
-        name: trimmedName,
-        targetAmount: numericTargetAmount,
-        savedAmount: 0,
-        monthlyContribution: numericMonthlyContribution,
-        targetDate,
-        status: 'active',
-      };
+      try {
+        setSavingGoal(true);
 
-      setGoals((current) => [...current, newGoal]);
+        const response = await fetch(`${API_URL}/api/goals`, {
+          method: 'POST',
 
-      closeGoalModal();
+          headers: {
+            'Content-Type': 'application/json',
+          },
+
+          body: JSON.stringify({
+            name: trimmedName,
+
+            account_id: accountId,
+
+            target_amount: numericTargetAmount,
+
+            saved_amount: 0,
+
+            monthly_contribution: numericMonthlyContribution,
+
+            target_date: targetDate,
+
+            status: 'active',
+          }),
+        });
+
+        const responseData = await response.json();
+
+        if (!response.ok) {
+          throw new Error(responseData?.detail ?? 'Failed to create goal.');
+        }
+
+        const createdGoal = normalizeGoal(responseData as RawGoal);
+
+        setGoals((current) => [...current, createdGoal]);
+
+        closeGoalModal();
+      } catch (err) {
+        console.error('Failed to create goal:', err);
+
+        setGoalError(
+          err instanceof Error ? err.message : 'Failed to create goal.',
+        );
+      } finally {
+        setSavingGoal(false);
+      }
 
       return;
     }
 
     /*
+     * ---------------------------------------------------------
      * EDIT
+     * ---------------------------------------------------------
      */
-    if (editingGoalId !== null) {
-      setGoals((current) =>
-        current.map((goal) => {
-          if (goal.id !== editingGoalId) {
-            return goal;
-          }
 
-          /*
-           * Keep the amount already saved.
-           *
-           * If the target is reduced below the
-           * current saved amount, cap savedAmount
-           * at the new target.
-           */
-          const savedAmount = Math.min(goal.savedAmount, numericTargetAmount);
+    if (editingGoalId === null) {
+      return;
+    }
 
-          return {
-            ...goal,
-            name: trimmedName,
-            targetAmount: numericTargetAmount,
-            savedAmount,
-            monthlyContribution: numericMonthlyContribution,
-            targetDate,
-            status: savedAmount >= numericTargetAmount ? 'completed' : 'active',
-          };
+    const existingGoal = goals.find((goal) => goal.id === editingGoalId);
+
+    if (!existingGoal) {
+      setGoalError('Goal not found.');
+      return;
+    }
+
+    /*
+     * Preserve saved amount.
+     */
+
+    const savedAmount = Math.min(existingGoal.savedAmount, numericTargetAmount);
+
+    try {
+      setSavingGoal(true);
+
+      const response = await fetch(`${API_URL}/api/goals/${editingGoalId}`, {
+        method: 'PATCH',
+
+        headers: {
+          'Content-Type': 'application/json',
+        },
+
+        body: JSON.stringify({
+          name: trimmedName,
+
+          account_id: accountId,
+
+          target_amount: numericTargetAmount,
+
+          saved_amount: savedAmount,
+
+          monthly_contribution: numericMonthlyContribution,
+
+          target_date: targetDate,
+
+          status: savedAmount >= numericTargetAmount ? 'completed' : 'active',
         }),
+      });
+
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(responseData?.detail ?? 'Failed to update goal.');
+      }
+
+      const updatedGoal = normalizeGoal(responseData as RawGoal);
+
+      setGoals((current) =>
+        current.map((goal) =>
+          goal.id === updatedGoal.id ? updatedGoal : goal,
+        ),
       );
 
       closeGoalModal();
+    } catch (err) {
+      console.error('Failed to update goal:', err);
+
+      setGoalError(
+        err instanceof Error ? err.message : 'Failed to update goal.',
+      );
+    } finally {
+      setSavingGoal(false);
     }
   }
 
   /*
-   * Delete goal.
+   * ---------------------------------------------------------
+   * DELETE GOAL
+   * ---------------------------------------------------------
    */
-  function handleDeleteGoal(goal: Goal) {
+
+  async function handleDeleteGoal(goal: Goal) {
     const confirmed = window.confirm(
       `Are you sure you want to delete "${goal.name}"?`,
     );
@@ -283,8 +468,35 @@ function ManageGoals() {
       return;
     }
 
-    setGoals((current) => current.filter((item) => item.id !== goal.id));
+    try {
+      setError('');
+      setDeletingGoalId(goal.id);
+
+      const response = await fetch(`${API_URL}/api/goals/${goal.id}`, {
+        method: 'DELETE',
+      });
+
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(responseData?.detail ?? 'Failed to delete goal.');
+      }
+
+      setGoals((current) => current.filter((item) => item.id !== goal.id));
+    } catch (err) {
+      console.error('Failed to delete goal:', err);
+
+      setError(err instanceof Error ? err.message : 'Failed to delete goal.');
+    } finally {
+      setDeletingGoalId(null);
+    }
   }
+
+  /*
+   * ---------------------------------------------------------
+   * LOADING
+   * ---------------------------------------------------------
+   */
 
   if (loading) {
     return (
@@ -294,7 +506,13 @@ function ManageGoals() {
     );
   }
 
-  if (error) {
+  /*
+   * ---------------------------------------------------------
+   * ERROR
+   * ---------------------------------------------------------
+   */
+
+  if (error && goals.length === 0) {
     return (
       <main className="mx-auto max-w-5xl px-6 py-8 pb-24 lg:pb-8">
         <p className="text-sm text-red-500">{error}</p>
@@ -305,9 +523,7 @@ function ManageGoals() {
   return (
     <>
       <main className="mx-auto max-w-5xl px-6 py-8 pb-24 lg:pb-8">
-        {/* ==================================================
-            PAGE HEADER
-        ================================================== */}
+        {/* PAGE HEADER */}
 
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -333,16 +549,31 @@ function ManageGoals() {
           <button
             type="button"
             onClick={openAddGoalModal}
-            className="flex w-fit items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+            disabled={accounts.length === 0}
+            className="flex w-fit items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus size={17} />
             Add Goal
           </button>
         </div>
 
-        {/* ==================================================
-            GOAL CARDS
-        ================================================== */}
+        {/* API ERROR */}
+
+        {error && goals.length > 0 && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {/* NO ACTIVE ACCOUNTS */}
+
+        {accounts.length === 0 && (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            You need at least one active account before creating a goal.
+          </div>
+        )}
+
+        {/* GOAL CARDS */}
 
         {goals.length === 0 ? (
           <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
@@ -361,6 +592,8 @@ function ManageGoals() {
                 goal.targetAmount > 0
                   ? Math.min((goal.savedAmount / goal.targetAmount) * 100, 100)
                   : 0;
+
+              const isDeleting = deletingGoalId === goal.id;
 
               return (
                 <div
@@ -386,7 +619,8 @@ function ManageGoals() {
                       <button
                         type="button"
                         onClick={() => openEditGoalModal(goal)}
-                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-900"
+                        disabled={savingGoal || deletingGoalId !== null}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label={`Edit ${goal.name}`}
                         title="Edit goal"
                       >
@@ -396,18 +630,31 @@ function ManageGoals() {
                       <button
                         type="button"
                         onClick={() => handleDeleteGoal(goal)}
-                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                        disabled={savingGoal || deletingGoalId !== null}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label={`Delete ${goal.name}`}
                         title="Delete goal"
                       >
-                        <Trash2 size={15} />
+                        {isDeleting ? (
+                          <span className="block h-[15px] w-[15px] animate-pulse rounded-full bg-slate-300" />
+                        ) : (
+                          <Trash2 size={15} />
+                        )}
                       </button>
                     </div>
                   </div>
 
+                  {/* ACCOUNT */}
+
+                  <div className="mt-3">
+                    <span className="inline-flex max-w-full truncate rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
+                      {goal.accountName ?? 'Unknown account'}
+                    </span>
+                  </div>
+
                   {/* AMOUNT */}
 
-                  <p className="mt-5 text-lg font-semibold text-slate-900">
+                  <p className="mt-4 text-lg font-semibold text-slate-900">
                     {formatCurrency(goal.targetAmount)}
                   </p>
 
@@ -460,9 +707,7 @@ function ManageGoals() {
         )}
       </main>
 
-      {/* ==================================================
-          ADD / EDIT GOAL MODAL
-      ================================================== */}
+      {/* ADD / EDIT MODAL */}
 
       {showGoalModal && (
         <div
@@ -491,7 +736,8 @@ function ManageGoals() {
               <button
                 type="button"
                 onClick={closeGoalModal}
-                className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                disabled={savingGoal}
+                className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Close"
               >
                 <X size={18} />
@@ -520,7 +766,39 @@ function ManageGoals() {
                     placeholder="e.g. New Laptop"
                     className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
                     autoFocus
+                    disabled={savingGoal}
                   />
+                </div>
+
+                {/* ACCOUNT */}
+
+                <div>
+                  <label
+                    htmlFor="goal-account"
+                    className="mb-2 block text-sm font-medium text-slate-700"
+                  >
+                    Account
+                  </label>
+
+                  <select
+                    id="goal-account"
+                    value={accountId}
+                    onChange={(event) => setAccountId(event.target.value)}
+                    disabled={savingGoal}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  >
+                    <option value="">Select an account</option>
+
+                    {accounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <p className="mt-1.5 text-xs text-slate-400">
+                    This is the account where this goal will be managed.
+                  </p>
                 </div>
 
                 {/* TARGET AMOUNT */}
@@ -542,6 +820,7 @@ function ManageGoals() {
                     onChange={(event) => setTargetAmount(event.target.value)}
                     placeholder="80000"
                     className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    disabled={savingGoal}
                   />
                 </div>
 
@@ -566,6 +845,7 @@ function ManageGoals() {
                     }
                     placeholder="10000"
                     className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    disabled={savingGoal}
                   />
 
                   <p className="mt-1.5 text-xs text-slate-400">
@@ -589,6 +869,7 @@ function ManageGoals() {
                     value={targetDate}
                     onChange={(event) => setTargetDate(event.target.value)}
                     className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    disabled={savingGoal}
                   />
                 </div>
               </div>
@@ -605,16 +886,22 @@ function ManageGoals() {
                 <button
                   type="button"
                   onClick={closeGoalModal}
-                  className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  disabled={savingGoal}
+                  className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Cancel
                 </button>
 
                 <button
                   type="submit"
-                  className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+                  disabled={savingGoal}
+                  className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {modalMode === 'add' ? 'Add Goal' : 'Save Changes'}
+                  {savingGoal
+                    ? 'Saving...'
+                    : modalMode === 'add'
+                      ? 'Add Goal'
+                      : 'Save Changes'}
                 </button>
               </div>
             </form>

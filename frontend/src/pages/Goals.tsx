@@ -13,12 +13,14 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import type { Goal, GoalsResponse } from '../types';
+import type { Goal } from '../types';
 import {
   analyzeGoal,
   formatGoalDate,
   formatGoalTargetDate,
 } from '../utils/goals';
+
+const API_URL = 'http://127.0.0.1:8000';
 
 const currency = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -35,6 +37,22 @@ type AnalysisStatus =
   | 'ahead'
   | 'behind'
   | 'not_feasible';
+
+type RawGoal = {
+  id: string;
+  name: string;
+  target_amount: number | string;
+  saved_amount: number | string;
+  monthly_contribution: number | string;
+  target_date: string;
+  status: 'active' | 'completed';
+};
+
+type GoalsResponse = {
+  goals: RawGoal[];
+};
+
+type GoalResponse = RawGoal;
 
 const statusConfig: Record<
   AnalysisStatus,
@@ -95,55 +113,62 @@ const getStatusMessage = (
   }
 };
 
+function normalizeGoal(goal: RawGoal): Goal {
+  return {
+    id: goal.id,
+    name: goal.name,
+    targetAmount: Number(goal.target_amount),
+    savedAmount: Number(goal.saved_amount),
+    monthlyContribution: Number(goal.monthly_contribution),
+    targetDate: goal.target_date,
+    status: goal.status,
+  };
+}
+
 function Goals() {
   const navigate = useNavigate();
 
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const [contributionGoal, setContributionGoal] = useState<Goal | null>(null);
 
   const [contributionAmount, setContributionAmount] = useState('');
 
+  const [contributionSaving, setContributionSaving] = useState(false);
+
   /*
-   * Load and normalize goals.
-   *
-   * JSON uses snake_case while the frontend uses camelCase.
+   * ---------------------------------------------------------
+   * LOAD GOALS
+   * ---------------------------------------------------------
    */
+
   useEffect(() => {
     const loadGoals = async () => {
       try {
-        const response = await fetch('/data/goals.json');
+        setLoading(true);
+        setError('');
+
+        const response = await fetch(`${API_URL}/api/goals`);
 
         if (!response.ok) {
-          throw new Error('Failed to load goals');
+          throw new Error(`Goals request failed: ${response.status}`);
         }
 
-        const data = (await response.json()) as {
-          goals?: Array<{
-            id: string;
-            name: string;
-            target_amount: number;
-            saved_amount: number;
-            monthly_contribution: number;
-            target_date: string;
-            status: 'active' | 'completed';
-          }>;
-        };
+        const data = (await response.json()) as GoalsResponse;
 
-        const normalizedGoals: Goal[] = (data.goals ?? []).map((goal) => ({
-          id: goal.id,
-          name: goal.name,
-          targetAmount: Number(goal.target_amount),
-          savedAmount: Number(goal.saved_amount),
-          monthlyContribution: Number(goal.monthly_contribution),
-          targetDate: goal.target_date,
-          status: goal.status,
-        }));
+        const normalizedGoals = (data.goals ?? []).map(normalizeGoal);
 
         setGoals(normalizedGoals);
-      } catch (error) {
-        console.error('Failed to load goals:', error);
+      } catch (loadError) {
+        console.error('Failed to load goals:', loadError);
+
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : 'Failed to load goals.',
+        );
       } finally {
         setLoading(false);
       }
@@ -153,8 +178,11 @@ function Goals() {
   }, []);
 
   /*
-   * Analyze every goal.
+   * ---------------------------------------------------------
+   * ANALYZE EVERY GOAL
+   * ---------------------------------------------------------
    */
+
   const analyses = useMemo(() => {
     return goals.map((goal) => ({
       goal,
@@ -168,63 +196,89 @@ function Goals() {
   }, [goals]);
 
   /*
-   * Total target across all goals.
+   * ---------------------------------------------------------
+   * TOTAL TARGET
+   * ---------------------------------------------------------
    */
+
   const totalTarget = useMemo(
     () => goals.reduce((total, goal) => total + goal.targetAmount, 0),
     [goals],
   );
 
   /*
-   * Total amount currently saved across all goals.
+   * ---------------------------------------------------------
+   * TOTAL SAVED
+   * ---------------------------------------------------------
    */
+
   const totalSaved = useMemo(
     () => goals.reduce((total, goal) => total + goal.savedAmount, 0),
     [goals],
   );
 
   /*
-   * Active goals.
+   * ---------------------------------------------------------
+   * ACTIVE GOALS
+   * ---------------------------------------------------------
    */
+
   const activeGoals = useMemo(
     () => goals.filter((goal) => goal.status === 'active'),
     [goals],
   );
 
   /*
-   * Completed goals.
+   * ---------------------------------------------------------
+   * COMPLETED GOALS
+   * ---------------------------------------------------------
    */
+
   const completedGoals = useMemo(
     () => goals.filter((goal) => goal.status === 'completed'),
     [goals],
   );
 
   /*
-   * Open contribution modal.
+   * ---------------------------------------------------------
+   * OPEN CONTRIBUTION MODAL
+   * ---------------------------------------------------------
    */
+
   const openContributionModal = (goal: Goal) => {
     const defaultAmount =
       goal.monthlyContribution > 0 ? goal.monthlyContribution : '';
 
     setContributionAmount(defaultAmount.toString());
+
     setContributionGoal(goal);
   };
 
   /*
-   * Close contribution modal.
+   * ---------------------------------------------------------
+   * CLOSE CONTRIBUTION MODAL
+   * ---------------------------------------------------------
    */
+
   const closeContributionModal = () => {
+    if (contributionSaving) {
+      return;
+    }
+
     setContributionGoal(null);
     setContributionAmount('');
   };
 
   /*
-   * Add contribution.
+   * ---------------------------------------------------------
+   * ADD CONTRIBUTION
+   * ---------------------------------------------------------
    *
-   * Currently this updates local React state only.
-   * Persistence will be handled by the backend later.
+   * This now persists through FastAPI.
+   * ---------------------------------------------------------
    */
-  const addContribution = () => {
+
+  const addContribution = async () => {
     if (!contributionGoal) {
       return;
     }
@@ -232,29 +286,67 @@ function Goals() {
     const amount = Number(contributionAmount);
 
     if (!Number.isFinite(amount) || amount <= 0) {
+      setError('Contribution amount must be greater than zero.');
       return;
     }
 
-    setGoals((currentGoals) =>
-      currentGoals.map((goal) => {
-        if (goal.id !== contributionGoal.id) {
-          return goal;
-        }
+    try {
+      setContributionSaving(true);
+      setError('');
 
-        const newSavedAmount = goal.savedAmount + amount;
+      const response = await fetch(
+        `${API_URL}/api/goals/${contributionGoal.id}/contribute`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            amount,
+          }),
+        },
+      );
 
-        const completed = newSavedAmount >= goal.targetAmount;
+      const responseData = (await response.json()) as
+        | GoalResponse
+        | { detail?: string };
 
-        return {
-          ...goal,
-          savedAmount: Math.min(newSavedAmount, goal.targetAmount),
-          status: completed ? 'completed' : goal.status,
-        };
-      }),
-    );
+      if (!response.ok) {
+        throw new Error(
+          'detail' in responseData && responseData.detail
+            ? responseData.detail
+            : 'Failed to add contribution.',
+        );
+      }
 
-    closeContributionModal();
+      const updatedGoal = normalizeGoal(responseData as GoalResponse);
+
+      setGoals((currentGoals) =>
+        currentGoals.map((goal) =>
+          goal.id === updatedGoal.id ? updatedGoal : goal,
+        ),
+      );
+
+      setContributionGoal(null);
+      setContributionAmount('');
+    } catch (contributionError) {
+      console.error('Failed to add contribution:', contributionError);
+
+      setError(
+        contributionError instanceof Error
+          ? contributionError.message
+          : 'Failed to add contribution.',
+      );
+    } finally {
+      setContributionSaving(false);
+    }
   };
+
+  /*
+   * ---------------------------------------------------------
+   * LOADING
+   * ---------------------------------------------------------
+   */
 
   if (loading) {
     return (
@@ -297,6 +389,13 @@ function Goals() {
             </button>
           </div>
         </div>
+
+        {/* Error */}
+        {error && (
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         {/* Overview */}
         <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -630,7 +729,8 @@ function Goals() {
                     {analysis.status !== 'completed' && (
                       <button
                         onClick={() => openContributionModal(goal)}
-                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={contributionSaving}
                       >
                         <Plus size={16} />
                         Add Contribution
@@ -661,7 +761,8 @@ function Goals() {
 
               <button
                 onClick={closeContributionModal}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                disabled={contributionSaving}
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 ×
               </button>
@@ -681,6 +782,7 @@ function Goals() {
                 className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
                 placeholder="10000"
                 autoFocus
+                disabled={contributionSaving}
               />
 
               <p className="mt-2 text-xs text-slate-500">
@@ -703,16 +805,18 @@ function Goals() {
             <div className="mt-6 flex justify-end gap-2">
               <button
                 onClick={closeContributionModal}
-                className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                disabled={contributionSaving}
+                className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
               </button>
 
               <button
                 onClick={addContribution}
-                className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+                disabled={contributionSaving}
+                className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Add Contribution
+                {contributionSaving ? 'Saving...' : 'Add Contribution'}
               </button>
             </div>
           </div>
