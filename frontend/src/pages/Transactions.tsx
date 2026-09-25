@@ -796,7 +796,7 @@ function Transactions() {
 
                         {/* AMOUNT + ACCOUNT */}
 
-                        <div className="w-auto shrink-0 text-right sm:min-w-[110px]">
+                        <div className="w-auto shrink-0 text-right sm:min-w-27.5">
                           <p
                             className={`text-sm font-semibold whitespace-nowrap ${
                               transaction.type === 'received'
@@ -892,7 +892,7 @@ function Transactions() {
 
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="max-w-[110px] truncate text-sm font-medium text-slate-900 sm:max-w-none">
+                              <span className="max-w-27.5 truncate text-sm font-medium text-slate-900 sm:max-w-none">
                                 {accountMap[sent.accountId] ??
                                   'Unknown Account'}
                               </span>
@@ -903,7 +903,7 @@ function Transactions() {
                                 className="shrink-0 text-slate-400"
                               />
 
-                              <span className="max-w-[110px] truncate text-sm font-medium text-slate-900 sm:max-w-none">
+                              <span className="max-w-27.5 truncate text-sm font-medium text-slate-900 sm:max-w-none">
                                 {accountMap[received.accountId] ??
                                   'Unknown Account'}
                               </span>

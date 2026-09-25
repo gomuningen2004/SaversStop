@@ -3,11 +3,9 @@ import { Link as RouterLink } from 'react-router-dom';
 
 import type {
   Account,
-  AccountsResponse,
   Category,
   CategoriesResponse,
   Transaction,
-  TransactionsResponse,
 } from '../types';
 
 type Period =
@@ -36,6 +34,33 @@ function formatCategoryName(name: string) {
 function getDateString(date: Date) {
   return date.toISOString().split('T')[0];
 }
+
+type RawTransaction = {
+  id: string;
+  transaction_date: string;
+  reason?: string | null;
+  category_id: string | null;
+  account_id: string;
+  amount: number | string;
+  type: 'sent' | 'received';
+  transfer_id?: string | null;
+};
+
+type RawTransactionsResponse = {
+  transactions: RawTransaction[];
+};
+
+type RawAccount = {
+  id: string;
+  name: string;
+  account_type_id: string;
+  current_balance: number | string;
+  active: boolean;
+};
+
+type AccountsResponse = {
+  accounts: RawAccount[];
+};
 
 function Categories() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -80,7 +105,7 @@ function Categories() {
           }
 
           const transactionsData =
-            (await transactionsResponse.json()) as TransactionsResponse;
+            (await transactionsResponse.json()) as RawTransactionsResponse;
 
           const accountsData =
             (await accountsResponse.json()) as AccountsResponse;
@@ -93,27 +118,16 @@ function Categories() {
            * into the frontend camelCase Transaction type.
            */
           const normalizedTransactions: Transaction[] =
-            transactionsData.transactions.map(
-              (transaction: {
-                id: string;
-                transaction_date: string;
-                reason?: string | null;
-                category_id: string | null;
-                account_id: string;
-                amount: number | string;
-                type: 'sent' | 'received';
-                transfer_id?: string | null;
-              }) => ({
-                id: transaction.id,
-                transactionDate: transaction.transaction_date,
-                reason: transaction.reason,
-                categoryId: transaction.category_id ?? '',
-                accountId: transaction.account_id,
-                amount: Number(transaction.amount),
-                type: transaction.type,
-                transferId: transaction.transfer_id ?? null,
-              }),
-            );
+            transactionsData.transactions.map((transaction) => ({
+              id: transaction.id,
+              transactionDate: transaction.transaction_date,
+              reason: transaction.reason,
+              categoryId: transaction.category_id ?? '',
+              accountId: transaction.account_id,
+              amount: Number(transaction.amount),
+              type: transaction.type,
+              transferId: transaction.transfer_id ?? null,
+            }));
 
           /*
            * Convert backend snake_case account fields

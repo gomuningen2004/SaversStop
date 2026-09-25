@@ -636,7 +636,7 @@ function ManageGoals() {
                         title="Delete goal"
                       >
                         {isDeleting ? (
-                          <span className="block h-[15px] w-[15px] animate-pulse rounded-full bg-slate-300" />
+                          <span className="block h-3.75 w-3.75 animate-pulse rounded-full bg-slate-300" />
                         ) : (
                           <Trash2 size={15} />
                         )}
