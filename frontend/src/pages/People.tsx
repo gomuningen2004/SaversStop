@@ -732,7 +732,7 @@ function People() {
 
       {/* Add Person Modal */}
       {showPersonModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-semibold text-slate-900">Add Person</h2>
 
@@ -783,7 +783,7 @@ function People() {
 
       {/* Debt / Payment Modal */}
       {showDebtModal && selectedPerson && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
           <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             {/* Header */}
             <div className="flex items-start justify-between gap-4">
@@ -968,7 +968,7 @@ function People() {
 
       {/* History Modal */}
       {showHistoryModal && selectedPerson && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
           <div className="max-h-[80vh] w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-xl">
             {/* Header */}
             <div className="border-b border-slate-100 p-6">
