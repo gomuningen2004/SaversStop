@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
-  Check,
   Clock,
   HandCoins,
   Plus,
@@ -11,6 +10,8 @@ import {
   Users,
   WalletCards,
 } from 'lucide-react';
+
+import PeopleCard from '../components/PeopleCard';
 
 import type { DebtInteraction, Person } from '../types';
 
@@ -27,6 +28,7 @@ type RawPerson = {
   id: string;
   name: string;
   active: boolean;
+  created_at: string;
 };
 
 type RawPeopleResponse = {
@@ -46,6 +48,10 @@ type RawDebtInteractionsResponse = {
   interactions: RawDebtInteraction[];
 };
 
+type DebtType = 'owed_to_me' | 'i_owe';
+
+type ModalMode = 'debt' | 'payment';
+
 const currency = new Intl.NumberFormat('en-IN', {
   style: 'currency',
   currency: 'INR',
@@ -60,12 +66,50 @@ const formatDate = (date: string) => {
     return '-';
   }
 
-  return new Date(`${date.slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', {
+  const normalizedDate = `${date.slice(0, 10)}T00:00:00`;
+
+  return new Date(normalizedDate).toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   });
 };
+
+const normalizePerson = (person: RawPerson): Person => ({
+  id: person.id,
+  name: person.name,
+  active: person.active,
+  createdAt: person.created_at,
+});
+
+const normalizeInteraction = (
+  interaction: RawDebtInteraction,
+): DebtInteraction => ({
+  id: interaction.id,
+  personId: interaction.person_id,
+  interactionDate: interaction.interaction_date,
+  amount: Number(interaction.amount),
+  type: interaction.type,
+  reason: interaction.reason ?? '',
+});
+
+async function getApiError(response: Response, fallback: string) {
+  try {
+    const data = await response.json();
+
+    if (typeof data?.detail === 'string') {
+      return data.detail;
+    }
+
+    if (typeof data?.message === 'string') {
+      return data.message;
+    }
+  } catch {
+    // Ignore invalid/non-JSON response bodies.
+  }
+
+  return fallback;
+}
 
 function People() {
   const [people, setPeople] = useState<Person[]>([]);
@@ -78,41 +122,16 @@ function People() {
   const [showDebtModal, setShowDebtModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
+  const [modalMode, setModalMode] = useState<ModalMode>('debt');
+
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
 
   const [personName, setPersonName] = useState('');
 
-  const [debtType, setDebtType] = useState<'owed_to_me' | 'i_owe'>(
-    'owed_to_me',
-  );
-
+  const [debtType, setDebtType] = useState<DebtType>('owed_to_me');
   const [debtAmount, setDebtAmount] = useState('');
   const [debtReason, setDebtReason] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
-
-  /*
-   * Convert API person into frontend person.
-   */
-  const normalizePerson = (person: RawPerson): Person => ({
-    id: person.id,
-    name: person.name,
-    active: person.active,
-  });
-
-  /*
-   * Convert API debt interaction snake_case
-   * into frontend camelCase.
-   */
-  const normalizeInteraction = (
-    interaction: RawDebtInteraction,
-  ): DebtInteraction => ({
-    id: interaction.id,
-    personId: interaction.person_id,
-    interactionDate: interaction.interaction_date,
-    amount: Number(interaction.amount),
-    type: interaction.type,
-    reason: interaction.reason ?? '',
-  });
 
   /*
    * Load people and debt interactions from FastAPI.
@@ -128,12 +147,20 @@ function People() {
         ]);
 
         if (!peopleResponse.ok) {
-          throw new Error(`Failed to load people (${peopleResponse.status})`);
+          throw new Error(
+            await getApiError(
+              peopleResponse,
+              `Failed to load people (${peopleResponse.status})`,
+            ),
+          );
         }
 
         if (!interactionsResponse.ok) {
           throw new Error(
-            `Failed to load debt interactions (${interactionsResponse.status})`,
+            await getApiError(
+              interactionsResponse,
+              `Failed to load debt interactions (${interactionsResponse.status})`,
+            ),
           );
         }
 
@@ -142,16 +169,11 @@ function People() {
         const interactionData =
           (await interactionsResponse.json()) as RawDebtInteractionsResponse;
 
-        const normalizedPeople: Person[] = (peopleData.people ?? []).map(
-          normalizePerson,
+        setPeople((peopleData.people ?? []).map(normalizePerson));
+
+        setInteractions(
+          (interactionData.interactions ?? []).map(normalizeInteraction),
         );
-
-        const normalizedInteractions: DebtInteraction[] = (
-          interactionData.interactions ?? []
-        ).map(normalizeInteraction);
-
-        setPeople(normalizedPeople);
-        setInteractions(normalizedInteractions);
       } catch (error) {
         console.error('Failed to load People data:', error);
 
@@ -169,8 +191,7 @@ function People() {
   }, []);
 
   /*
-   * Only active people participate in the current
-   * People view.
+   * Only active people participate in the current People view.
    */
   const activePeople = useMemo(
     () => people.filter((person) => person.active),
@@ -182,33 +203,115 @@ function People() {
     [activePeople, interactions],
   );
 
+  const sortedBalances = useMemo(() => {
+    return [...balances].sort((a, b) => {
+      const aSettled = a.balance === 0;
+      const bSettled = b.balance === 0;
+
+      // Both settled → name only
+      if (aSettled && bSettled) {
+        return a.person.name.localeCompare(b.person.name);
+      }
+
+      // Settled people go after people with outstanding balances
+      if (aSettled) {
+        return 1;
+      }
+
+      if (bSettled) {
+        return -1;
+      }
+
+      // Both have outstanding balances.
+      // Largest absolute amount first.
+      const amountDifference = Math.abs(b.balance) - Math.abs(a.balance);
+
+      if (amountDifference !== 0) {
+        return amountDifference;
+      }
+
+      // Same amount → newest created person first.
+      const createdDateDifference =
+        new Date(b.person.createdAt).getTime() -
+        new Date(a.person.createdAt).getTime();
+
+      if (createdDateDifference !== 0) {
+        return createdDateDifference;
+      }
+
+      // Still tied → name A-Z.
+      return a.person.name.localeCompare(b.person.name);
+    });
+  }, [balances]);
+
   const summary = useMemo(() => calculatePeopleSummary(balances), [balances]);
 
-  const receivables = balances.filter(({ balance }) => balance > 0);
+  /*
+   * Get balance for a specific person.
+   */
+  const getPersonBalance = (person: Person) =>
+    balances.find(({ person: balancePerson }) => balancePerson.id === person.id)
+      ?.balance ?? 0;
 
-  const payables = balances.filter(({ balance }) => balance < 0);
+  /*
+   * Reset debt/payment form fields.
+   */
+  const resetDebtForm = () => {
+    setDebtType('owed_to_me');
+    setDebtAmount('');
+    setDebtReason('');
+    setPaymentAmount('');
+  };
 
-  const settledPeople = balances.filter(({ balance }) => balance === 0);
+  /*
+   * Open Add Debt modal.
+   */
+  const openDebtModal = (person: Person) => {
+    setSelectedPerson(person);
+    setModalMode('debt');
+    resetDebtForm();
+    setShowDebtModal(true);
+  };
 
-  const selectedPersonBalance = selectedPerson
-    ? (balances.find(({ person }) => person.id === selectedPerson.id)
-        ?.balance ?? 0)
-    : 0;
+  /*
+   * Open Payment modal.
+   */
+  const openPaymentModal = (person: Person) => {
+    setSelectedPerson(person);
+    setModalMode('payment');
+    setPaymentAmount('');
+    setShowDebtModal(true);
+  };
 
-  const selectedPersonInteractions = selectedPerson
-    ? interactions
-        .filter((interaction) => interaction.personId === selectedPerson.id)
-        .sort(
-          (a, b) =>
-            new Date(b.interactionDate).getTime() -
-            new Date(a.interactionDate).getTime(),
-        )
-    : [];
+  /*
+   * Close Debt / Payment modal.
+   */
+  const closeDebtModal = () => {
+    if (saving) {
+      return;
+    }
+
+    setShowDebtModal(false);
+    setSelectedPerson(null);
+    resetDebtForm();
+  };
+
+  /*
+   * Open Add Person modal.
+   */
+  const openPersonModal = () => {
+    setPersonName('');
+    setShowPersonModal(true);
+  };
 
   /*
    * Close Add Person modal.
    */
   const closePersonModal = () => {
+    if (saving) {
+      return;
+    }
+
     setShowPersonModal(false);
     setPersonName('');
   };
@@ -220,6 +323,7 @@ function People() {
     const trimmedName = personName.trim();
 
     if (!trimmedName) {
+      alert('Please enter a name.');
       return;
     }
 
@@ -246,27 +350,24 @@ function People() {
         }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.detail || 'Failed to add person.');
+        throw new Error(await getApiError(response, 'Failed to add person.'));
       }
 
+      const data = (await response.json()) as RawPerson;
       const newPerson = normalizePerson(data);
 
       setPeople((current) => [...current, newPerson]);
 
-      closePersonModal();
+      setShowPersonModal(false);
+      setPersonName('');
 
       /*
-       * Automatically open the debt modal for the
-       * newly created person.
+       * Open Add Debt for the newly created person.
        */
       setSelectedPerson(newPerson);
-      setDebtType('owed_to_me');
-      setDebtAmount('');
-      setDebtReason('');
-      setPaymentAmount('');
+      setModalMode('debt');
+      resetDebtForm();
       setShowDebtModal(true);
     } catch (error) {
       console.error('Failed to add person:', error);
@@ -278,29 +379,7 @@ function People() {
   };
 
   /*
-   * Open Debt modal.
-   */
-  const openDebtModal = (person: Person) => {
-    setSelectedPerson(person);
-    setDebtType('owed_to_me');
-    setDebtAmount('');
-    setDebtReason('');
-    setPaymentAmount('');
-    setShowDebtModal(true);
-  };
-
-  /*
-   * Close Debt modal.
-   */
-  const closeDebtModal = () => {
-    setShowDebtModal(false);
-    setDebtAmount('');
-    setDebtReason('');
-    setPaymentAmount('');
-  };
-
-  /*
-   * Add new IOU through FastAPI.
+   * Add a new IOU through FastAPI.
    */
   const addDebt = async () => {
     if (!selectedPerson) {
@@ -314,7 +393,9 @@ function People() {
       return;
     }
 
-    if (!debtReason.trim()) {
+    const trimmedReason = debtReason.trim();
+
+    if (!trimmedReason) {
       alert('Please enter a reason.');
       return;
     }
@@ -329,23 +410,18 @@ function People() {
         },
         body: JSON.stringify({
           person_id: selectedPerson.id,
-
-          /*
-           * Backend expects datetime, not just YYYY-MM-DD.
-           */
           interaction_date: `${new Date().toISOString().slice(0, 10)}T00:00:00`,
-
           amount,
           type: debtType,
-          reason: debtReason.trim(),
+          reason: trimmedReason,
         }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.detail || 'Failed to add IOU.');
+        throw new Error(await getApiError(response, 'Failed to add IOU.'));
       }
+
+      const data = await response.json();
 
       const newInteraction = normalizeInteraction(data.interaction);
 
@@ -373,6 +449,7 @@ function People() {
       return;
     }
 
+    const balance = getPersonBalance(selectedPerson);
     const amount = Number(paymentAmount);
 
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -380,17 +457,17 @@ function People() {
       return;
     }
 
-    if (selectedPersonBalance === 0) {
+    if (balance === 0) {
+      alert('There is no outstanding balance for this person.');
       return;
     }
 
-    if (amount > Math.abs(selectedPersonBalance)) {
+    if (amount > Math.abs(balance)) {
       alert('Payment cannot be greater than the outstanding balance.');
       return;
     }
 
-    const paymentType =
-      selectedPersonBalance > 0 ? 'payment_received' : 'payment_sent';
+    const paymentType = balance > 0 ? 'payment_received' : 'payment_sent';
 
     try {
       setSaving(true);
@@ -402,26 +479,24 @@ function People() {
         },
         body: JSON.stringify({
           person_id: selectedPerson.id,
-
           interaction_date: `${new Date().toISOString().slice(0, 10)}T00:00:00`,
-
           amount,
           type: paymentType,
-          reason:
-            selectedPersonBalance > 0 ? 'Payment received' : 'Payment sent',
+          reason: balance > 0 ? 'Payment received' : 'Payment sent',
         }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.detail || 'Failed to record payment.');
+        throw new Error(
+          await getApiError(response, 'Failed to record payment.'),
+        );
       }
+
+      const data = await response.json();
 
       const newInteraction = normalizeInteraction(data.interaction);
 
       setInteractions((current) => [...current, newInteraction]);
-
       setPaymentAmount('');
     } catch (error) {
       console.error('Failed to record payment:', error);
@@ -447,7 +522,36 @@ function People() {
    */
   const closeHistory = () => {
     setShowHistoryModal(false);
+    setSelectedPerson(null);
   };
+
+  /*
+   * Interactions for selected person, newest first.
+   */
+  const selectedPersonInteractions = useMemo(() => {
+    if (!selectedPerson) {
+      return [];
+    }
+
+    return interactions
+      .filter((interaction) => interaction.personId === selectedPerson.id)
+      .sort(
+        (a, b) =>
+          new Date(b.interactionDate).getTime() -
+          new Date(a.interactionDate).getTime(),
+      );
+  }, [interactions, selectedPerson]);
+
+  const selectedPersonBalance = selectedPerson
+    ? getPersonBalance(selectedPerson)
+    : 0;
+
+  const selectedBalanceLabel =
+    selectedPersonBalance === 0
+      ? 'Settled'
+      : `${getBalanceLabel(selectedPersonBalance)} ${formatAmount(
+          getBalanceAmount(selectedPersonBalance),
+        )}`;
 
   if (loading) {
     return (
@@ -462,52 +566,27 @@ function People() {
   return (
     <main className="min-h-[calc(100vh-64px)] px-6 py-8 pb-24">
       <div className="mx-auto max-w-6xl">
-        {/* Header */}
-
+        {/* Page Header */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">People</h1>
 
             <p className="mt-1 text-sm text-slate-500">
-              Keep track of who owes you and who you owe.
+              Keep track of money you owe and money others owe you.
             </p>
           </div>
 
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowPersonModal(true)}
-              disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <UserPlus size={17} />
-              Add Person
-            </button>
-
-            <button
-              onClick={() => {
-                if (activePeople.length === 0) {
-                  setShowPersonModal(true);
-                  return;
-                }
-
-                setSelectedPerson(activePeople[0]);
-                setDebtType('owed_to_me');
-                setDebtAmount('');
-                setDebtReason('');
-                setPaymentAmount('');
-                setShowDebtModal(true);
-              }}
-              disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Plus size={17} />
-              Add Debt
-            </button>
-          </div>
+          <button
+            onClick={openPersonModal}
+            disabled={saving}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <UserPlus size={17} />
+            Add Person
+          </button>
         </div>
 
         {/* Summary */}
-
         <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -559,261 +638,58 @@ function People() {
           </div>
         </div>
 
-        {/* Settlement suggestion */}
+        {/* People */}
+        <section>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-slate-900">People</h2>
 
-        {(summary.totalReceivable > 0 || summary.totalPayable > 0) && (
-          <div className="mb-8 rounded-xl border border-slate-200 bg-white p-6">
-            <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-slate-100 p-2">
-                <HandCoins size={20} className="text-slate-700" />
-              </div>
-
-              <div className="flex-1">
-                <h2 className="font-semibold text-slate-900">
-                  Settlement overview
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  You have{' '}
-                  <span className="font-medium text-emerald-600">
-                    {formatAmount(summary.totalReceivable)}
-                  </span>{' '}
-                  receivable and{' '}
-                  <span className="font-medium text-red-600">
-                    {formatAmount(summary.totalPayable)}
-                  </span>{' '}
-                  payable.
-                </p>
-
-                {summary.potentialSettlement > 0 && (
-                  <div className="mt-4 rounded-lg bg-slate-50 p-4">
-                    <p className="text-sm font-medium text-slate-800">
-                      Potential settlement amount
-                    </p>
-
-                    <p className="mt-1 text-xl font-semibold text-slate-900">
-                      {formatAmount(summary.potentialSettlement)}
-                    </p>
-
-                    <p className="mt-1 text-xs leading-5 text-slate-500">
-                      This is the amount that could theoretically offset your
-                      outstanding receivables and payables. It does not move
-                      money or automatically settle anyone.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Receivables */}
-
-        {receivables.length > 0 && (
-          <section className="mb-8">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">
-                  People who owe you
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Money you expect to receive.
-                </p>
-              </div>
-
-              <span className="text-sm font-medium text-emerald-600">
-                {formatAmount(summary.totalReceivable)}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {receivables.map(({ person, balance }) => (
-                <div
-                  key={person.id}
-                  className="rounded-xl border border-slate-200 bg-white p-5"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-sm font-semibold text-emerald-700">
-                        {person.name.charAt(0).toUpperCase()}
-                      </div>
-
-                      <div>
-                        <h3 className="font-medium text-slate-900">
-                          {person.name}
-                        </h3>
-
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          Owes you
-                        </p>
-                      </div>
-                    </div>
-
-                    <p className="text-lg font-semibold text-emerald-600">
-                      {formatAmount(balance)}
-                    </p>
-                  </div>
-
-                  <div className="mt-5 flex gap-2">
-                    <button
-                      onClick={() => openDebtModal(person)}
-                      disabled={saving}
-                      className="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Record Payment
-                    </button>
-
-                    <button
-                      onClick={() => openHistory(person)}
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-slate-600 hover:bg-slate-50"
-                      title="View history"
-                    >
-                      <Receipt size={17} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Payables */}
-
-        {payables.length > 0 && (
-          <section className="mb-8">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">
-                  People you owe
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Money you need to pay.
-                </p>
-              </div>
-
-              <span className="text-sm font-medium text-red-600">
-                {formatAmount(summary.totalPayable)}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {payables.map(({ person, balance }) => (
-                <div
-                  key={person.id}
-                  className="rounded-xl border border-slate-200 bg-white p-5"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-sm font-semibold text-red-700">
-                        {person.name.charAt(0).toUpperCase()}
-                      </div>
-
-                      <div>
-                        <h3 className="font-medium text-slate-900">
-                          {person.name}
-                        </h3>
-
-                        <p className="mt-0.5 text-xs text-slate-500">You owe</p>
-                      </div>
-                    </div>
-
-                    <p className="text-lg font-semibold text-red-600">
-                      {formatAmount(Math.abs(balance))}
-                    </p>
-                  </div>
-
-                  <div className="mt-5 flex gap-2">
-                    <button
-                      onClick={() => openDebtModal(person)}
-                      disabled={saving}
-                      className="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Record Payment
-                    </button>
-
-                    <button
-                      onClick={() => openHistory(person)}
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-slate-600 hover:bg-slate-50"
-                      title="View history"
-                    >
-                      <Receipt size={17} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Settled */}
-
-        {settledPeople.length > 0 && (
-          <section className="mb-8">
-            <div className="mb-4">
-              <h2 className="text-lg font-semibold text-slate-900">Settled</h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                No outstanding balance.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {settledPeople.map(({ person }) => (
-                <div
-                  key={person.id}
-                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
-                      {person.name.charAt(0).toUpperCase()}
-                    </div>
-
-                    <div>
-                      <p className="font-medium text-slate-900">
-                        {person.name}
-                      </p>
-
-                      <p className="text-xs text-slate-500">Settled</p>
-                    </div>
-                  </div>
-
-                  <Check size={18} className="text-emerald-600" />
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Empty state */}
-
-        {activePeople.length === 0 && (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-            <Users size={40} className="mx-auto text-slate-400" />
-
-            <h2 className="mt-4 text-lg font-semibold text-slate-900">
-              No people yet
-            </h2>
-
-            <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
-              Add someone whenever you lend money, borrow money, or need to keep
-              track of an IOU.
+            <p className="mt-1 text-sm text-slate-500">
+              Manage outstanding balances and interactions.
             </p>
-
-            <button
-              onClick={() => setShowPersonModal(true)}
-              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white"
-            >
-              <UserPlus size={17} />
-              Add Person
-            </button>
           </div>
-        )}
+
+          {activePeople.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+              <Users size={40} className="mx-auto text-slate-400" />
+
+              <h2 className="mt-4 text-lg font-semibold text-slate-900">
+                No people yet
+              </h2>
+
+              <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
+                Add someone whenever you lend money, borrow money, or need to
+                keep track of an IOU.
+              </p>
+
+              <button
+                onClick={openPersonModal}
+                disabled={saving}
+                className="mt-6 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <UserPlus size={17} />
+                Add Person
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {sortedBalances.map(({ person, balance }) => (
+                <PeopleCard
+                  key={person.id}
+                  person={person}
+                  balance={balance}
+                  saving={saving}
+                  formatAmount={formatAmount}
+                  onPayment={openPaymentModal}
+                  onHistory={openHistory}
+                  onAddDebt={openDebtModal}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       {/* Add Person Modal */}
-
       {showPersonModal && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
@@ -865,145 +741,144 @@ function People() {
       )}
 
       {/* Debt / Payment Modal */}
-
-      {showDebtModal && (
+      {showDebtModal && selectedPerson && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">
-              {selectedPerson ? `Manage ${selectedPerson.name}` : 'Add Debt'}
-            </h2>
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {selectedPerson.name}
+                </h2>
 
-            {selectedPerson && (
-              <div className="mt-4 rounded-lg bg-slate-50 p-4">
-                <p className="text-xs text-slate-500">Current balance</p>
-
-                <p
-                  className={`mt-1 text-xl font-semibold ${
-                    selectedPersonBalance > 0
-                      ? 'text-emerald-600'
-                      : selectedPersonBalance < 0
-                        ? 'text-red-600'
-                        : 'text-slate-900'
-                  }`}
-                >
-                  {selectedPersonBalance === 0
-                    ? 'Settled'
-                    : `${getBalanceLabel(selectedPersonBalance)} ${formatAmount(
-                        getBalanceAmount(selectedPersonBalance),
-                      )}`}
+                <p className="mt-1 text-sm text-slate-500">
+                  {modalMode === 'payment'
+                    ? 'Record a payment.'
+                    : 'Add a new IOU.'}
                 </p>
-              </div>
-            )}
-
-            {/* New debt */}
-
-            <div className="mt-6">
-              <h3 className="text-sm font-semibold text-slate-900">
-                Add new IOU
-              </h3>
-
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setDebtType('owed_to_me')}
-                  disabled={saving}
-                  className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${
-                    debtType === 'owed_to_me'
-                      ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                      : 'border-slate-200 text-slate-600'
-                  }`}
-                >
-                  They owe me
-                </button>
-
-                <button
-                  onClick={() => setDebtType('i_owe')}
-                  disabled={saving}
-                  className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${
-                    debtType === 'i_owe'
-                      ? 'border-red-300 bg-red-50 text-red-700'
-                      : 'border-slate-200 text-slate-600'
-                  }`}
-                >
-                  I owe them
-                </button>
-              </div>
-
-              {!selectedPerson && (
-                <div className="mt-4">
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Person
-                  </label>
-
-                  <select
-                    value={selectedPerson?.id ?? ''}
-                    onChange={(event) => {
-                      const person = people.find(
-                        (item) => item.id === event.target.value,
-                      );
-
-                      setSelectedPerson(person ?? null);
-                    }}
-                    disabled={saving}
-                    className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm disabled:bg-slate-50"
-                  >
-                    <option value="">Select person</option>
-
-                    {activePeople.map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="mt-4">
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Amount
-                </label>
-
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={debtAmount}
-                  onChange={(event) => setDebtAmount(event.target.value)}
-                  placeholder="2500"
-                  disabled={saving}
-                  className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
-                />
-              </div>
-
-              <div className="mt-4">
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Reason
-                </label>
-
-                <input
-                  value={debtReason}
-                  onChange={(event) => setDebtReason(event.target.value)}
-                  placeholder="Dinner, borrowed money, etc."
-                  disabled={saving}
-                  className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
-                />
               </div>
 
               <button
-                onClick={addDebt}
-                disabled={!selectedPerson || saving}
-                className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={closeDebtModal}
+                disabled={saving}
+                aria-label="Close"
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {saving ? 'Saving...' : 'Add IOU'}
+                ×
               </button>
             </div>
 
-            {/* Payment */}
+            {/* Current Balance */}
+            <div className="mt-5 rounded-lg bg-slate-50 p-4">
+              <p className="text-xs text-slate-500">Current balance</p>
 
-            {selectedPerson && selectedPersonBalance !== 0 && (
-              <div className="mt-6 border-t border-slate-100 pt-6">
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Record payment
-                </h3>
+              <p
+                className={`mt-1 text-xl font-semibold ${
+                  selectedPersonBalance > 0
+                    ? 'text-emerald-600'
+                    : selectedPersonBalance < 0
+                      ? 'text-red-600'
+                      : 'text-slate-900'
+                }`}
+              >
+                {selectedBalanceLabel}
+              </p>
+            </div>
+
+            {/* Add Debt */}
+            {modalMode === 'debt' && (
+              <div className="mt-6">
+                <div className="flex items-center gap-2">
+                  <Plus size={17} className="text-slate-700" />
+
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Add new IOU
+                  </h3>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setDebtType('owed_to_me')}
+                    disabled={saving}
+                    className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${
+                      debtType === 'owed_to_me'
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    They owe me
+                  </button>
+
+                  <button
+                    onClick={() => setDebtType('i_owe')}
+                    disabled={saving}
+                    className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${
+                      debtType === 'i_owe'
+                        ? 'border-red-300 bg-red-50 text-red-700'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    I owe them
+                  </button>
+                </div>
+
+                <div className="mt-4">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Amount
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={debtAmount}
+                    onChange={(event) => setDebtAmount(event.target.value)}
+                    placeholder="2500"
+                    disabled={saving}
+                    className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Reason
+                  </label>
+
+                  <input
+                    value={debtReason}
+                    onChange={(event) => setDebtReason(event.target.value)}
+                    placeholder="Dinner, borrowed money, etc."
+                    disabled={saving}
+                    className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
+                  />
+                </div>
+
+                <button
+                  onClick={addDebt}
+                  disabled={saving}
+                  className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {saving ? 'Saving...' : 'Add IOU'}
+                </button>
+              </div>
+            )}
+
+            {/* Payment */}
+            {modalMode === 'payment' && (
+              <div className="mt-6">
+                <div className="flex items-center gap-2">
+                  <HandCoins size={17} className="text-slate-700" />
+
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Record payment
+                  </h3>
+                </div>
+
+                <p className="mt-2 text-sm text-slate-500">
+                  {selectedPersonBalance > 0
+                    ? `${selectedPerson.name} is paying you.`
+                    : `You are paying ${selectedPerson.name}.`}
+                </p>
 
                 <div className="mt-4">
                   <label className="mb-2 block text-sm font-medium text-slate-700">
@@ -1019,38 +894,42 @@ function People() {
                     onChange={(event) => setPaymentAmount(event.target.value)}
                     placeholder={Math.abs(selectedPersonBalance).toString()}
                     disabled={saving}
+                    autoFocus
                     className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
                   />
                 </div>
 
+                <p className="mt-2 text-xs text-slate-500">
+                  Maximum payment:{' '}
+                  {formatAmount(Math.abs(selectedPersonBalance))}
+                </p>
+
                 <button
                   onClick={recordPayment}
                   disabled={saving}
-                  className="mt-4 w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {saving ? 'Saving...' : 'Record Payment'}
                 </button>
               </div>
             )}
 
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={closeDebtModal}
-                disabled={saving}
-                className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Close
-              </button>
-            </div>
+            <button
+              onClick={closeDebtModal}
+              disabled={saving}
+              className="mt-6 w-full rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
 
       {/* History Modal */}
-
       {showHistoryModal && selectedPerson && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
           <div className="max-h-[80vh] w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-xl">
+            {/* Header */}
             <div className="border-b border-slate-100 p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -1063,6 +942,7 @@ function People() {
 
                 <button
                   onClick={closeHistory}
+                  aria-label="Close"
                   className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
                 >
                   ×
@@ -1081,15 +961,12 @@ function People() {
                         : 'text-slate-900'
                   }`}
                 >
-                  {selectedPersonBalance === 0
-                    ? 'Settled'
-                    : `${getBalanceLabel(selectedPersonBalance)} ${formatAmount(
-                        getBalanceAmount(selectedPersonBalance),
-                      )}`}
+                  {selectedBalanceLabel}
                 </p>
               </div>
             </div>
 
+            {/* History */}
             <div className="max-h-[55vh] overflow-y-auto p-6">
               {selectedPersonInteractions.length === 0 ? (
                 <div className="py-10 text-center">
@@ -1102,7 +979,7 @@ function People() {
               ) : (
                 <div className="space-y-3">
                   {selectedPersonInteractions.map((interaction) => {
-                    const isPositive =
+                    const increasesBalance =
                       interaction.type === 'owed_to_me' ||
                       interaction.type === 'payment_sent';
 
@@ -1113,21 +990,21 @@ function People() {
                     return (
                       <div
                         key={interaction.id}
-                        className="flex items-center justify-between rounded-lg border border-slate-100 p-4"
+                        className="flex items-center justify-between gap-4 rounded-lg border border-slate-100 p-4"
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
                           <div
                             className={`rounded-lg p-2 ${
                               isPayment
                                 ? 'bg-slate-100'
-                                : isPositive
+                                : increasesBalance
                                   ? 'bg-emerald-50'
                                   : 'bg-red-50'
                             }`}
                           >
                             {isPayment ? (
                               <Receipt size={17} className="text-slate-600" />
-                            ) : isPositive ? (
+                            ) : increasesBalance ? (
                               <ArrowDownLeft
                                 size={17}
                                 className="text-emerald-600"
@@ -1140,8 +1017,8 @@ function People() {
                             )}
                           </div>
 
-                          <div>
-                            <p className="text-sm font-medium text-slate-800">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-slate-800">
                               {interaction.reason || 'No reason provided'}
                             </p>
 
@@ -1152,15 +1029,13 @@ function People() {
                         </div>
 
                         <p
-                          className={`text-sm font-semibold ${
-                            isPayment
-                              ? 'text-slate-700'
-                              : isPositive
-                                ? 'text-emerald-600'
-                                : 'text-red-600'
+                          className={`shrink-0 text-sm font-semibold ${
+                            increasesBalance
+                              ? 'text-emerald-600'
+                              : 'text-red-600'
                           }`}
                         >
-                          {isPositive ? '+' : '-'}
+                          {increasesBalance ? '+' : '-'}
                           {formatAmount(interaction.amount)}
                         </p>
                       </div>
@@ -1170,6 +1045,7 @@ function People() {
               )}
             </div>
 
+            {/* Footer */}
             <div className="border-t border-slate-100 p-6">
               <button
                 onClick={closeHistory}
