@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   ArrowDownLeft,
   ArrowLeftRight,
@@ -7,6 +6,8 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
+
+import AddTransactionModal from '../components/AddTransactionModal';
 
 import type {
   Account,
@@ -185,6 +186,7 @@ function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [showAddTransactionModal, setShowAddTransactionModal] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [transferCurrentPage, setTransferCurrentPage] = useState(1);
@@ -592,12 +594,13 @@ function Transactions() {
           </p>
         </div>
 
-        <Link
-          to="/add-transaction"
+        <button
+          type="button"
+          onClick={() => setShowAddTransactionModal(true)}
           className="w-fit rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
         >
           + Add Transaction
-        </Link>
+        </button>
       </div>
 
       {/* DATE FILTER */}
@@ -939,6 +942,14 @@ function Transactions() {
           </>
         )}
       </section>
+
+      <AddTransactionModal
+        isOpen={showAddTransactionModal}
+        onClose={() => setShowAddTransactionModal(false)}
+        onSuccess={() => {
+          window.location.reload();
+        }}
+      />
     </main>
   );
 }
