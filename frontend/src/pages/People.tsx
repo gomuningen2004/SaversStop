@@ -198,10 +198,51 @@ function People() {
     [people],
   );
 
-  const balances = useMemo(
-    () => calculatePeopleBalances(activePeople, interactions),
-    [activePeople, interactions],
-  );
+  const balances = useMemo(() => {
+    const calculatedBalances = calculatePeopleBalances(
+      activePeople,
+      interactions,
+    );
+
+    return [...calculatedBalances].sort((a, b) => {
+      const aSettled = a.balance === 0;
+      const bSettled = b.balance === 0;
+
+      // Settled people always come after people with outstanding balances.
+      if (aSettled && !bSettled) {
+        return 1;
+      }
+
+      if (!aSettled && bSettled) {
+        return -1;
+      }
+
+      // Both are settled: sort only by name.
+      if (aSettled && bSettled) {
+        return a.person.name.localeCompare(b.person.name);
+      }
+
+      // Both have outstanding balances:
+      // largest absolute amount first.
+      const amountDifference = Math.abs(b.balance) - Math.abs(a.balance);
+
+      if (amountDifference !== 0) {
+        return amountDifference;
+      }
+
+      // Same amount: oldest person first.
+      const dateDifference =
+        new Date(a.person.createdAt).getTime() -
+        new Date(b.person.createdAt).getTime();
+
+      if (dateDifference !== 0) {
+        return dateDifference;
+      }
+
+      // Same amount and same creation date: alphabetical.
+      return a.person.name.localeCompare(b.person.name);
+    });
+  }, [activePeople, interactions]);
 
   const sortedBalances = useMemo(() => {
     return [...balances].sort((a, b) => {
@@ -691,7 +732,7 @@ function People() {
 
       {/* Add Person Modal */}
       {showPersonModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-semibold text-slate-900">Add Person</h2>
 
@@ -742,7 +783,7 @@ function People() {
 
       {/* Debt / Payment Modal */}
       {showDebtModal && selectedPerson && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
           <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             {/* Header */}
             <div className="flex items-start justify-between gap-4">
@@ -927,7 +968,7 @@ function People() {
 
       {/* History Modal */}
       {showHistoryModal && selectedPerson && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
           <div className="max-h-[80vh] w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-xl">
             {/* Header */}
             <div className="border-b border-slate-100 p-6">
