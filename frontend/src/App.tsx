@@ -6,14 +6,12 @@ import Navigation from './components/Navigation';
 import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
 import Transactions from './pages/Transactions';
-import AddTransaction from './pages/AddTransaction';
 import Budgets from './pages/Budgets';
 import Analytics from './pages/Analytics';
 import Forecast from './pages/Forecast';
 import Categories from './pages/Categories';
 import ManageCategories from './pages/ManageCategories';
 import Goals from './pages/Goals';
-import ManageGoals from './pages/ManageGoals';
 import People from './pages/People';
 
 function App() {
@@ -32,14 +30,12 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/accounts" element={<Accounts />} />
             <Route path="/transactions" element={<Transactions />} />
-            <Route path="/add-transaction" element={<AddTransaction />} />
             <Route path="/budgets" element={<Budgets />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/forecast" element={<Forecast />} />
             <Route path="/categories" element={<Categories />} />
             <Route path="/categories/manage" element={<ManageCategories />} />
             <Route path="/goals" element={<Goals />} />
-            <Route path="/goals/manage" element={<ManageGoals />} />
             <Route path="/people" element={<People />} />
           </Routes>
         </div>

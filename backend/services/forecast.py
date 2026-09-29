@@ -18,7 +18,6 @@ MONEY_QUANT = Decimal("0.01")
 #
 INCOME_CATEGORY_NAMES = {
     "salary",
-    "extra income",
 }
 
 

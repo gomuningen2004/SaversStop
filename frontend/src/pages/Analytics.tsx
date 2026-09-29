@@ -22,12 +22,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 
-import type {
-  Category,
-  CategoriesResponse,
-  Transaction,
-  TransactionsResponse,
-} from '../types';
+import type { Category, CategoriesResponse, Transaction } from '../types';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', {
@@ -204,9 +199,6 @@ function Analytics() {
 
         setTransactions(normalizedTransactions);
         setCategories(normalizedCategories);
-
-        console.log('Analytics transactions:', normalizedTransactions);
-        console.log('Analytics categories:', normalizedCategories);
       } catch (error) {
         console.error('Failed to load analytics data:', error);
       } finally {
