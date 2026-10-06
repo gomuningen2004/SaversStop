@@ -83,7 +83,7 @@ function AccountBalances({ accounts, totalFunds }: AccountBalancesProps) {
         >
           <p className="text-sm font-medium text-slate-600">Net balance</p>
           <p
-            className={`mt-2 break-words text-2xl font-semibold sm:text-3xl ${
+            className={`mt-2 wrap-break-word text-2xl font-semibold sm:text-3xl ${
               totalFunds < 0 ? 'text-rose-700' : 'text-emerald-700'
             }`}
           >

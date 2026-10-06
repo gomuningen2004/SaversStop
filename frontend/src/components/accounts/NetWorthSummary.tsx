@@ -25,7 +25,7 @@ function NetWorthSummary({
         >
           <p className="text-sm font-medium text-slate-600">Net worth</p>
           <p
-            className={`mt-3 break-words text-3xl font-semibold sm:text-4xl ${
+            className={`mt-3 wrap-break-word text-3xl font-semibold sm:text-4xl ${
               netWorth < 0 ? 'text-rose-700' : 'text-emerald-800'
             }`}
           >
