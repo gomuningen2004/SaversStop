@@ -17,6 +17,8 @@ export function useTransactionsPage() {
   const [dateFilter, setDateFilter] = useState<DateFilter>('this-year');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+  const [selectedAccount, setSelectedAccount] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [transactionPage, setTransactionPage] = useState(1);
   const [transferPage, setTransferPage] = useState(1);
 
@@ -43,6 +45,25 @@ export function useTransactionsPage() {
     resetPages();
   };
 
+  const handleAccountChange = (accountId: string) => {
+    setSelectedAccount(accountId);
+    resetPages();
+  };
+
+  const handleCategoryChange = (categoryId: string) => {
+    setSelectedCategory(categoryId);
+    resetPages();
+  };
+
+  const resetFilters = () => {
+    setDateFilter('this-year');
+    setCustomStartDate('');
+    setCustomEndDate('');
+    setSelectedAccount('all');
+    setSelectedCategory('all');
+    resetPages();
+  };
+
   const categoryNames = useMemo(
     () =>
       new Map(
@@ -56,17 +77,14 @@ export function useTransactionsPage() {
   const accountNames = useMemo(
     () =>
       new Map(
-        transactionData.accounts.map((account) => [
-          account.id,
-          account.name,
-        ]),
+        transactionData.accounts.map((account) => [account.id, account.name]),
       ),
     [transactionData.accounts],
   );
   const getAccountName = (id: string) =>
     accountNames.get(id) ?? 'Unknown Account';
 
-  const filteredTransactions = useMemo(() => {
+  const dateFilteredTransactions = useMemo(() => {
     if (dateFilter === 'all-time') return transactionData.transactions;
 
     const { start, end } = getDateRange(
@@ -89,14 +107,27 @@ export function useTransactionsPage() {
 
   const regularTransactions = useMemo(
     () =>
-      filteredTransactions
-        .filter((transaction) => !transaction.transferId)
+      dateFilteredTransactions
+        .filter(
+          (transaction) =>
+            !transaction.transferId &&
+            (selectedAccount === 'all' ||
+              transaction.accountId === selectedAccount) &&
+            (selectedCategory === 'all' ||
+              transaction.categoryId === selectedCategory),
+        )
         .sort((a, b) => b.transactionDate.localeCompare(a.transactionDate)),
-    [filteredTransactions],
+    [dateFilteredTransactions, selectedAccount, selectedCategory],
   );
   const transfers = useMemo(
-    () => buildTransfers(filteredTransactions),
-    [filteredTransactions],
+    () =>
+      buildTransfers(dateFilteredTransactions).filter(
+        (transfer) =>
+          selectedAccount === 'all' ||
+          transfer.sent.accountId === selectedAccount ||
+          transfer.received.accountId === selectedAccount,
+      ),
+    [dateFilteredTransactions, selectedAccount],
   );
   const transactionPager = paginate(
     regularTransactions,
@@ -113,6 +144,13 @@ export function useTransactionsPage() {
     dateFilter,
     customStartDate,
     customEndDate,
+    selectedAccount,
+    selectedCategory,
+    hasActiveFilters:
+      dateFilter !== 'this-year' ||
+      Boolean(customStartDate || customEndDate) ||
+      selectedAccount !== 'all' ||
+      selectedCategory !== 'all',
     transactionPage,
     transferPage,
     setTransactionPage,
@@ -120,6 +158,9 @@ export function useTransactionsPage() {
     handleFilterChange,
     handleStartDateChange,
     handleEndDateChange,
+    handleAccountChange,
+    handleCategoryChange,
+    resetFilters,
     categoryNames,
     getAccountName,
     regularTransactions,

@@ -18,6 +18,9 @@ import GoalContributionModal from '../components/goals/GoalContributionModal';
 
 import useGoalsPage from '../hooks/useGoalsPage';
 
+const pageClass =
+  'min-h-[calc(100vh-64px)] w-full px-4 py-5 pb-24 sm:px-6 lg:py-8 lg:pb-8';
+
 function Goals() {
   const {
     formatAmount,
@@ -79,8 +82,8 @@ function Goals() {
 
   if (loading) {
     return (
-      <main className="min-h-[calc(100vh-64px)] px-6 py-8">
-        <div className="mx-auto max-w-6xl">
+      <main className={pageClass}>
+        <div className="mx-auto max-w-7xl">
           <p className="text-sm text-slate-500">Loading goals...</p>
         </div>
       </main>
@@ -94,15 +97,20 @@ function Goals() {
    */
 
   return (
-    <main className="min-h-[calc(100vh-64px)] px-6 py-8 pb-24">
-      <div className="mx-auto max-w-6xl">
+    <main className={pageClass}>
+      <div className="mx-auto max-w-7xl">
         {/* -------------------------------------------------- */}
         {/* HEADER */}
         {/* -------------------------------------------------- */}
 
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Goals</h1>
+            <p className="text-xs font-semibold uppercase text-emerald-700">
+              Savings plan
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold text-slate-900 sm:text-3xl">
+              Goals
+            </h1>
 
             <p className="mt-1 text-sm text-slate-500">
               Plan what you're saving for and track whether you're on schedule.
@@ -113,7 +121,7 @@ function Goals() {
             type="button"
             onClick={showAddGoal ? closeAddGoal : openAddGoal}
             disabled={accounts.length === 0}
-            className="inline-flex w-fit items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex w-fit items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {showAddGoal ? <X size={17} /> : <Plus size={17} />}
 
@@ -158,8 +166,8 @@ function Goals() {
         {/* OVERVIEW */}
         {/* -------------------------------------------------- */}
 
-        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mb-8 grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center gap-2 text-slate-500">
               <Target size={18} />
 
@@ -171,23 +179,45 @@ function Goals() {
             </p>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="mb-3 flex items-center gap-2 text-slate-500">
-              <CircleDollarSign size={18} />
-
-              <span className="text-sm">Total Saved</span>
+          <div className="rounded-xl bg-[#173b35] p-5 text-white shadow-sm">
+            <div className="mb-3 flex items-center gap-2 text-emerald-100">
+              <CircleDollarSign size={18} aria-hidden="true" />
+              <span className="text-sm font-medium">Total saved</span>
             </div>
 
-            <p className="text-2xl font-semibold text-slate-900">
+            <p className="text-2xl font-semibold tabular-nums">
               {formatAmount(totalSaved)}
             </p>
 
-            <p className="mt-1 text-xs text-slate-500">
-              of {formatAmount(totalTarget)} total targets
+            <p className="mt-1 text-xs text-emerald-100/75">
+              of {formatAmount(totalTarget)} across all goals
             </p>
+            <div
+              className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/15"
+              role="progressbar"
+              aria-label="Overall savings progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={
+                totalTarget > 0
+                  ? Math.min((totalSaved / totalTarget) * 100, 100)
+                  : 0
+              }
+            >
+              <div
+                className="h-full rounded-full bg-emerald-300"
+                style={{
+                  width: `${
+                    totalTarget > 0
+                      ? Math.min((totalSaved / totalTarget) * 100, 100)
+                      : 0
+                  }%`,
+                }}
+              />
+            </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center gap-2 text-slate-500">
               <Check size={18} />
 
@@ -244,7 +274,7 @@ function Goals() {
             return (
               <div
                 key={goal.id}
-                className="overflow-hidden rounded-xl border border-slate-200 bg-white"
+                className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
               >
                 {/* ================================================= */}
                 {/* INLINE EDIT FORM */}
@@ -457,7 +487,9 @@ function Goals() {
                           </div>
 
                           <p className="mt-1 text-sm text-slate-500">
-                            Track your progress toward this savings goal.
+                            {goal.accountName
+                              ? `Saving in ${goal.accountName}`
+                              : 'Track your progress toward this savings goal.'}
                           </p>
                         </div>
 
@@ -508,7 +540,7 @@ function Goals() {
 
                         <div className="h-3 overflow-hidden rounded-full bg-slate-100">
                           <div
-                            className="h-full rounded-full bg-slate-900 transition-all"
+                            className="h-full rounded-full bg-emerald-600 transition-all"
                             style={{
                               width: `${Math.min(
                                 analysis.progressPercentage,
@@ -771,7 +803,6 @@ function Goals() {
           onSubmit={addContribution}
         />
       )}
-
     </main>
   );
 }

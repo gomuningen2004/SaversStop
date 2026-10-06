@@ -187,34 +187,62 @@ def calculate_weighted_average(
     return money(weighted_total / total_weight)
 
 
+def calculate_salary_run_rate(
+    monthly_salary: dict[str, Decimal],
+    months: list[str],
+) -> Decimal:
+    """Use the latest completed month with salary income as the monthly run rate."""
+
+    for month in months:
+        salary = money(monthly_salary.get(month))
+        if salary > 0:
+            return salary
+
+    return Decimal("0.00")
+
+
 # ============================================================
 # CURRENT BALANCE
 # ============================================================
 
 
+def calculate_asset_balance(accounts):
+    """Sum active asset balances, excluding liability accounts."""
+
+    total = Decimal("0.00")
+
+    for account in accounts:
+        account_type = account.get("account_types") or {}
+        if isinstance(account_type, list):
+            account_type = account_type[0] if account_type else {}
+
+        if account_type.get("classification") != "asset":
+            continue
+
+        total += money(account.get("current_balance"))
+
+    return money(total)
+
+
 def get_current_balance():
     """
-    Calculate the current balance from active accounts.
+    Calculate available cash from active asset accounts.
 
-    For the current implementation, active account balances are
-    summed exactly as the existing frontend did.
+    Liability balances are not available funds and must not be
+    added to the cash-flow forecast.
     """
 
     response = supabase.table("accounts").select("""
             id,
             current_balance,
-            active,
-            account_type_id
+            account_types (
+                classification
+            )
         """).eq("active", True).execute()
 
     accounts = response.data or []
 
-    return money(
-        sum(
-            (money(account["current_balance"]) for account in accounts),
-            Decimal("0"),
-        )
-    )
+    return calculate_asset_balance(accounts)
 
 
 # ============================================================
@@ -302,10 +330,9 @@ def calculate_monthly_history(
 
     Income rules:
 
-        received + Salary       -> income
-        received + Extra Income -> income
+        received + Salary -> income
 
-    All other received transactions are ignored for income.
+    All other received categories are ignored for income.
 
     Expenses:
 
@@ -317,6 +344,9 @@ def calculate_monthly_history(
     monthly = {}
 
     for transaction in transactions:
+
+        if transaction.get("transfer_id"):
+            continue
 
         transaction_date = transaction.get("transaction_date")
 
@@ -381,21 +411,51 @@ def get_goals():
     return response.data or []
 
 
-def calculate_goal_contributions(goals):
-    """
-    Sum active goal monthly contributions.
+def initialize_goal_remaining(goals):
+    return {
+        str(goal.get("id")): max(
+            money(goal.get("target_amount")) - money(goal.get("saved_amount")),
+            Decimal("0.00"),
+        )
+        for goal in goals
+    }
 
-    Contributions <= 0 are ignored.
-    """
+
+def calculate_goal_contributions(goals, forecast_month, remaining_by_goal=None):
+    """Sum scheduled contributions for one month, capped at goal targets."""
 
     total = Decimal("0.00")
 
     for goal in goals:
+        if goal.get("status") != "active":
+            continue
+
+        target_date = str(goal.get("target_date") or "")
+        if (
+            len(target_date) < 7
+            or target_date[:7] < forecast_month
+            or target_date < date.today().isoformat()
+        ):
+            continue
 
         contribution = money(goal.get("monthly_contribution"))
+        if contribution <= 0:
+            continue
 
-        if contribution > 0:
-            total += contribution
+        goal_id = str(goal.get("id"))
+        if remaining_by_goal is None:
+            remaining = max(
+                money(goal.get("target_amount")) - money(goal.get("saved_amount")),
+                Decimal("0.00"),
+            )
+        else:
+            remaining = remaining_by_goal.get(goal_id, Decimal("0.00"))
+
+        applied_contribution = min(contribution, remaining)
+        total += applied_contribution
+
+        if remaining_by_goal is not None:
+            remaining_by_goal[goal_id] = money(remaining - applied_contribution)
 
     return money(total)
 
@@ -437,6 +497,19 @@ def calculate_current_month_actuals(
     )
 
 
+def calculate_remaining_month_flow(
+    historical_average,
+    remaining_days: int,
+    days_in_month: int,
+) -> Decimal:
+    """Prorate a completed-month average across the remaining days."""
+
+    if remaining_days <= 0 or days_in_month <= 0:
+        return Decimal("0.00")
+
+    return money(historical_average * Decimal(remaining_days) / Decimal(days_in_month))
+
+
 # ============================================================
 # FORECAST ENGINE
 # ============================================================
@@ -449,8 +522,9 @@ def build_forecast(
     """
     Main forecast engine.
 
-    Income is calculated only from transactions whose category
-    is Salary or Extra Income.
+    Expected income uses received transactions categorized as
+    Salary. The latest completed month with salary activity sets
+    the recurring monthly salary run rate.
 
     Expenses are calculated from sent transactions.
 
@@ -512,7 +586,7 @@ def build_forecast(
     # HISTORICAL AVERAGES
     # ========================================================
 
-    historical_monthly_income = calculate_weighted_average(
+    historical_monthly_income = calculate_salary_run_rate(
         monthly_income,
         historical_months,
     )
@@ -538,7 +612,11 @@ def build_forecast(
 
     goals = get_goals()
 
-    monthly_goal_contributions = calculate_goal_contributions(goals)
+    monthly_goal_contributions = calculate_goal_contributions(
+        goals,
+        current_month_key,
+    )
+    goal_remaining_by_id = initialize_goal_remaining(goals)
 
     # ========================================================
     # FUTURE FORECAST
@@ -559,8 +637,6 @@ def build_forecast(
         if index == 0:
 
             today = date.today()
-
-            days_elapsed = today.day
 
             # ------------------------------------------------
             # Number of days in current month
@@ -586,44 +662,26 @@ def build_forecast(
 
             days_in_month = (first_next_month - current_month_start).days
 
-            remaining_days = max(
-                days_in_month - days_elapsed,
-                0,
+            remaining_days = max(days_in_month - today.day, 0)
+            remaining_income = max(
+                historical_monthly_income - current_month_income,
+                Decimal("0.00"),
+            )
+            remaining_expenses = calculate_remaining_month_flow(
+                historical_monthly_spending,
+                remaining_days,
+                days_in_month,
             )
 
-            # ------------------------------------------------
-            # Expected income
-            # ------------------------------------------------
+            expected_total_income = money(
+                max(current_month_income, historical_monthly_income)
+            )
+            expected_total_expenses = money(current_month_expenses + remaining_expenses)
 
-            if days_elapsed > 0:
-
-                expected_total_income = money(
-                    current_month_income
-                    + (
-                        historical_monthly_income
-                        * Decimal(remaining_days)
-                        / Decimal(days_in_month)
-                    )
-                )
-
-                # ------------------------------------------------
-                # Expected expenses
-                # ------------------------------------------------
-
-                expected_total_expenses = money(
-                    current_month_expenses
-                    + (
-                        historical_monthly_spending
-                        * Decimal(remaining_days)
-                        / Decimal(days_in_month)
-                    )
-                )
-
-            else:
-
-                expected_total_income = historical_monthly_income
-
-                expected_total_expenses = historical_monthly_spending
+            # The current account balance already includes month-to-date
+            # transactions, so only the remaining flow changes that balance.
+            cash_income = remaining_income
+            cash_expenses = remaining_expenses
 
         # ====================================================
         # FUTURE MONTHS
@@ -635,19 +693,24 @@ def build_forecast(
 
             expected_total_expenses = historical_monthly_spending
 
+            cash_income = expected_total_income
+            cash_expenses = expected_total_expenses
+
         # ====================================================
         # GOALS
         # ====================================================
 
-        goal_contributions = monthly_goal_contributions
+        goal_contributions = calculate_goal_contributions(
+            goals,
+            month,
+            goal_remaining_by_id,
+        )
 
         # ====================================================
         # NET CHANGE
         # ====================================================
 
-        net_change = money(
-            expected_total_income - expected_total_expenses - goal_contributions
-        )
+        net_change = money(cash_income - cash_expenses - goal_contributions)
 
         starting_balance = balance
 
@@ -693,21 +756,24 @@ def build_forecast(
         "end_of_month_forecast": (end_of_month_forecast),
         "forecast_months": forecast_months,
         "methodology": (
-            "Forecast income is calculated only from "
-            "received transactions categorized as "
-            "Salary or Extra Income. Other received "
-            "transactions are not treated as income. "
+            "Expected income uses only received transactions "
+            "categorized as Salary. The latest completed month "
+            "with salary income sets the monthly salary run rate; "
+            "other received categories are excluded. "
             "Expenses are calculated from sent "
             "transactions. Self-transfers are excluded "
             "because they do not change overall "
-            "available money. Historical income and "
-            "spending use a weighted average of the "
+            "available money. Historical spending uses a "
+            "weighted average of the "
             f"previous {history_months} completed "
             "months, giving greater weight to recent "
-            "activity. Current-month actual income "
-            "and spending are combined with expected "
-            "remaining activity. Active goal "
-            "contributions are deducted from projected "
-            "monthly cash flow."
+            "activity. The starting balance includes "
+            "active asset accounts only. Current-month "
+            "actuals are reported separately and are not "
+            "added to the live balance again; only expected "
+            "remaining activity changes that balance. "
+            "Active goal contributions are deducted only "
+            "through each target date and are capped at the "
+            "remaining amount needed."
         ),
     }

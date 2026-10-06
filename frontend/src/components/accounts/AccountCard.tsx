@@ -41,13 +41,29 @@ function AccountCard({
 
   const Icon = accountTypeIcons[accountType?.name ?? ''] ?? Landmark;
 
+  const isLiability = accountClassification === 'liability';
+  const displayedBalance = isLiability
+    ? Math.abs(account.currentBalance)
+    : account.currentBalance;
+  const hasNegativeAssetBalance = !isLiability && account.currentBalance < 0;
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
+    <article
+      className={`rounded-lg border border-slate-200 border-l-4 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+        isLiability ? 'border-l-rose-500' : 'border-l-emerald-600'
+      }`}
+    >
       {/* HEADER */}
 
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+          <div
+            className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+              isLiability
+                ? 'bg-rose-50 text-rose-700'
+                : 'bg-emerald-50 text-emerald-700'
+            }`}
+          >
             <Icon size={20} />
           </div>
 
@@ -64,7 +80,10 @@ function AccountCard({
 
         <div className="relative">
           <details>
-            <summary className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <summary
+              aria-label={`Actions for ${account.name}`}
+              className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+            >
               <MoreHorizontal size={18} />
             </summary>
 
@@ -102,21 +121,21 @@ function AccountCard({
       {/* BALANCE */}
 
       <div className="mt-6">
-        <p className="text-xs text-slate-500">
+        <p className="text-xs font-medium text-slate-500">
           {accountClassification === 'asset' ? 'Current Value' : 'Outstanding'}
         </p>
 
         <p
-          className={`mt-1 text-2xl font-semibold ${
-            accountClassification === 'liability'
-              ? 'text-red-600'
+          className={`mt-1 text-2xl font-semibold tabular-nums ${
+            isLiability || hasNegativeAssetBalance
+              ? 'text-rose-700'
               : 'text-slate-900'
           }`}
         >
-          {formatCurrency(Math.abs(account.currentBalance))}
+          {formatCurrency(displayedBalance)}
         </p>
       </div>
-    </div>
+    </article>
   );
 }
 

@@ -26,20 +26,27 @@ function AccountSection({
   onDeactivate,
 }: AccountSectionProps) {
   return (
-    <section className="mb-8">
-      <div className="mb-4 flex items-end justify-between">
+    <section className="mb-10 last:mb-0">
+      <div className="mb-5 flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-500">
+              {accounts.length}
+            </span>
+          </div>
           <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
-
-        <p
-          className={`text-sm font-semibold ${
-            totalColor === 'green' ? 'text-green-600' : 'text-red-600'
-          }`}
-        >
-          {formatCurrency(total)}
-        </p>
+        <div className="text-right">
+          <p className="text-xs font-medium text-slate-500">Section total</p>
+          <p
+            className={`mt-1 text-sm font-semibold tabular-nums ${
+              totalColor === 'green' ? 'text-emerald-700' : 'text-rose-700'
+            }`}
+          >
+            {formatCurrency(total)}
+          </p>
+        </div>
       </div>
 
       {accounts.length === 0 ? (
@@ -47,7 +54,7 @@ function AccountSection({
           <p className="text-sm text-slate-500">{emptyMessage}</p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {accounts.map((account) => (
             <AccountCard
               key={account.id}

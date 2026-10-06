@@ -25,6 +25,8 @@ function Accounts() {
     totalLiabilities,
     netWorth,
   } = useAccountsPage();
+  const pageClass =
+    'mx-auto w-full max-w-7xl px-4 py-5 pb-24 sm:px-6 lg:py-8 lg:pb-8';
 
   /*
    * ---------------------------------------------------------
@@ -34,7 +36,7 @@ function Accounts() {
 
   if (loading) {
     return (
-      <main className="px-6 py-8">
+      <main className={pageClass}>
         <p className="text-sm text-slate-500">Loading accounts...</p>
       </main>
     );
@@ -47,13 +49,18 @@ function Accounts() {
    */
 
   return (
-    <main className="px-6 py-8 pb-24">
-      <div className="mx-auto max-w-6xl">
+    <main className={pageClass}>
+      <div>
         {/* HEADER */}
 
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Accounts</h1>
+            <p className="text-xs font-semibold uppercase text-emerald-700">
+              Account management
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold text-slate-900 sm:text-3xl">
+              Accounts
+            </h1>
 
             <p className="mt-1 text-sm text-slate-500">
               Manage where your money is and what you owe.
@@ -63,7 +70,7 @@ function Accounts() {
           <button
             type="button"
             onClick={openAddAccountModal}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700"
           >
             <Plus size={18} />
             Add Account

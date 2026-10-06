@@ -29,6 +29,19 @@ type RawAccount = {
 };
 type AccountsResponse = { accounts: RawAccount[] };
 
+export type CategoryAccountFlow = {
+  accountId: string;
+  accountName: string;
+  moneyIn: number;
+  moneyOut: number;
+};
+
+export type CategoryFlow = Category & {
+  moneyIn: number;
+  moneyOut: number;
+  accounts: CategoryAccountFlow[];
+};
+
 const API_URL = 'http://127.0.0.1:8000';
 
 export function formatCurrency(amount: number) {
@@ -159,10 +172,13 @@ export function useCategoriesPage() {
     return { from: '', to: '' };
   }, [period, customFrom, customTo]);
 
-  const spendingTransactions = useMemo(
+  const filteredTransactions = useMemo(
     () =>
       transactions.filter((transaction) => {
-        if (transaction.type !== 'sent' || transaction.transferId !== null) {
+        if (
+          transaction.transferId ||
+          (transaction.type !== 'sent' && transaction.type !== 'received')
+        ) {
           return false;
         }
         if (
@@ -177,43 +193,93 @@ export function useCategoriesPage() {
         ) {
           return false;
         }
-        if (dateRange.from && transaction.transactionDate < dateRange.from) {
+        const date = transaction.transactionDate.slice(0, 10);
+        if (dateRange.from && date < dateRange.from) {
           return false;
         }
-        if (dateRange.to && transaction.transactionDate > dateRange.to) {
+        if (dateRange.to && date > dateRange.to) {
           return false;
         }
         return true;
       }),
     [transactions, selectedAccount, selectedCategory, dateRange],
   );
-  const categorySpending = useMemo(() => {
-    const totals: Record<string, number> = {};
-    spendingTransactions.forEach((transaction) => {
-      totals[transaction.categoryId] =
-        (totals[transaction.categoryId] ?? 0) + transaction.amount;
+
+  const categoryFlows = useMemo(() => {
+    const accountNames = new Map(
+      accounts.map((account) => [account.id, account.name]),
+    );
+    const totals = new Map<string, Map<string, CategoryAccountFlow>>();
+
+    filteredTransactions.forEach((transaction) => {
+      let accountTotals = totals.get(transaction.categoryId);
+      if (!accountTotals) {
+        accountTotals = new Map();
+        totals.set(transaction.categoryId, accountTotals);
+      }
+
+      let accountFlow = accountTotals.get(transaction.accountId);
+      if (!accountFlow) {
+        accountFlow = {
+          accountId: transaction.accountId,
+          accountName:
+            accountNames.get(transaction.accountId) ?? 'Unknown Account',
+          moneyIn: 0,
+          moneyOut: 0,
+        };
+        accountTotals.set(transaction.accountId, accountFlow);
+      }
+
+      if (transaction.type === 'received') {
+        accountFlow.moneyIn += transaction.amount;
+      } else {
+        accountFlow.moneyOut += transaction.amount;
+      }
     });
+
     return categories
-      .map((category) => ({
-        ...category,
-        amount: totals[category.id] ?? 0,
-      }))
-      .filter((category) => category.amount > 0)
-      .sort((a, b) => b.amount - a.amount);
-  }, [spendingTransactions, categories]);
-  const totalSpent = useMemo(
+      .map((category): CategoryFlow => {
+        const accountFlows = Array.from(
+          totals.get(category.id)?.values() ?? [],
+        ).sort(
+          (first, second) =>
+            second.moneyIn + second.moneyOut - first.moneyIn - first.moneyOut,
+        );
+        return {
+          ...category,
+          moneyIn: accountFlows.reduce(
+            (total, account) => total + account.moneyIn,
+            0,
+          ),
+          moneyOut: accountFlows.reduce(
+            (total, account) => total + account.moneyOut,
+            0,
+          ),
+          accounts: accountFlows,
+        };
+      })
+      .filter((category) => category.moneyIn > 0 || category.moneyOut > 0)
+      .sort(
+        (first, second) =>
+          second.moneyIn + second.moneyOut - first.moneyIn - first.moneyOut,
+      );
+  }, [filteredTransactions, categories, accounts]);
+
+  const totalMoneyIn = useMemo(
     () =>
-      spendingTransactions.reduce(
-        (total, transaction) => total + transaction.amount,
-        0,
-      ),
-    [spendingTransactions],
+      categoryFlows.reduce((total, category) => total + category.moneyIn, 0),
+    [categoryFlows],
+  );
+  const totalMoneyOut = useMemo(
+    () =>
+      categoryFlows.reduce((total, category) => total + category.moneyOut, 0),
+    [categoryFlows],
   );
 
   return {
     accounts,
     categories,
-    categorySpending,
+    categoryFlows,
     customFrom,
     customTo,
     error,
@@ -228,6 +294,7 @@ export function useCategoriesPage() {
     setPeriod,
     setSelectedAccount,
     setSelectedCategory,
-    totalSpent,
+    totalMoneyIn,
+    totalMoneyOut,
   };
 }

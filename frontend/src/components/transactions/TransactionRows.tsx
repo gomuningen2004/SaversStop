@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight } from 'lucide-react';
+import { ArrowDownLeft, ArrowRight, ArrowUpRight } from 'lucide-react';
 
 import type { Transaction } from '../../types';
 import {
@@ -75,7 +75,7 @@ export function TransferRow({
   return (
     <div className={rowClass}>
       <div className={`${iconWrapperClass} bg-blue-50`}>
-        <ArrowLeftRight size={20} strokeWidth={2} className="text-blue-600" />
+        <ArrowRight size={20} strokeWidth={2} className="text-blue-600" />
       </div>
 
       <div className="min-w-0 flex-1">
@@ -84,7 +84,7 @@ export function TransferRow({
             {getAccountName(transfer.sent.accountId)}
           </span>
 
-          <ArrowLeftRight
+          <ArrowRight
             size={15}
             strokeWidth={2}
             className="shrink-0 text-slate-400"

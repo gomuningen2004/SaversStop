@@ -6,9 +6,15 @@ type DateGroupsProps<T> = {
   items: T[];
   getDate: (item: T) => string;
   renderItem: (item: T) => ReactNode;
+  itemsClassName?: string;
 };
 
-function DateGroups<T>({ items, getDate, renderItem }: DateGroupsProps<T>) {
+function DateGroups<T>({
+  items,
+  getDate,
+  renderItem,
+  itemsClassName = 'space-y-2',
+}: DateGroupsProps<T>) {
   const groups = groupByDate(items, getDate);
   const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
 
@@ -20,7 +26,7 @@ function DateGroups<T>({ items, getDate, renderItem }: DateGroupsProps<T>) {
             {formatDate(date)}
           </h3>
 
-          <div className="space-y-2">{groups[date].map(renderItem)}</div>
+          <div className={itemsClassName}>{groups[date].map(renderItem)}</div>
         </div>
       ))}
     </div>

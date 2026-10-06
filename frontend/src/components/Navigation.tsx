@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 
 import {
   ArrowLeftRight,
   BarChart3,
   ChevronUp,
   Home,
+  KeyRound,
+  LockKeyhole,
   PiggyBank,
+  Settings2,
   Tags,
   Target,
   TrendingUp,
@@ -15,6 +18,50 @@ import {
 } from 'lucide-react';
 
 import { NavLink } from 'react-router-dom';
+import ChangeAppPinModal from './ChangeAppPinModal';
+
+type ThemePreference = 'system' | 'light' | 'dark';
+type NavigationProps = {
+  onLockNow: () => void;
+  onSavePin: (currentPin: string, newPin: string) => Promise<boolean>;
+};
+
+const themeStorageKey = 'saversstop-theme';
+
+function getInitialThemePreference(): ThemePreference {
+  const savedTheme = window.localStorage.getItem(themeStorageKey);
+  return savedTheme === 'light' || savedTheme === 'dark'
+    ? savedTheme
+    : 'system';
+}
+
+function ThemeSelect({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: ThemePreference;
+  onChange: (value: ThemePreference) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-medium text-slate-500">
+        Theme
+      </span>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value as ThemePreference)}
+        className="block w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+      >
+        <option value="system">Use device setting</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+  );
+}
 
 const navItems = [
   {
@@ -67,8 +114,30 @@ const navItems = [
 const mobilePrimaryItems = navItems.slice(0, 3);
 const mobileMoreItems = navItems.slice(3);
 
-function Navigation() {
+function Navigation({ onLockNow, onSavePin }: NavigationProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(
+    getInitialThemePreference,
+  );
+
+  useLayoutEffect(() => {
+    const systemPreference = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      const useDarkTheme =
+        themePreference === 'dark' ||
+        (themePreference === 'system' && systemPreference.matches);
+      document.documentElement.dataset.theme = useDarkTheme ? 'dark' : 'light';
+    };
+
+    applyTheme();
+    window.localStorage.setItem(themeStorageKey, themePreference);
+
+    if (themePreference === 'system') {
+      systemPreference.addEventListener('change', applyTheme);
+      return () => systemPreference.removeEventListener('change', applyTheme);
+    }
+  }, [themePreference]);
 
   return (
     <>
@@ -100,11 +169,40 @@ function Navigation() {
             })}
           </div>
         </nav>
+        <div className="absolute inset-x-4 bottom-5 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+            <Settings2 size={16} aria-hidden="true" />
+            Settings
+          </div>
+          <ThemeSelect
+            id="desktop-theme-preference"
+            value={themePreference}
+            onChange={setThemePreference}
+          />
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onLockNow}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+            >
+              <LockKeyhole size={14} aria-hidden="true" />
+              Lock now
+            </button>
+            <button
+              type="button"
+              onClick={() => setPinModalOpen(true)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+            >
+              <KeyRound size={14} aria-hidden="true" />
+              Change PIN
+            </button>
+          </div>
+        </div>
       </aside>
 
       {/* Mobile More Menu */}
       {moreOpen && (
-        <div className="fixed inset-x-0 bottom-16 z-40 border-t border-slate-200 bg-white shadow-lg lg:hidden">
+        <div className="fixed inset-x-0 bottom-16 z-40 max-h-[calc(100dvh-5rem)] overflow-y-auto border-t border-slate-200 bg-white shadow-lg lg:hidden">
           <div className="grid grid-cols-2 gap-2 p-4">
             {mobileMoreItems.map((item) => {
               const Icon = item.icon;
@@ -128,6 +226,35 @@ function Navigation() {
                 </NavLink>
               );
             })}
+          </div>
+          <div className="border-t border-slate-200 px-4 pb-4 pt-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+              <Settings2 size={16} aria-hidden="true" />
+              Settings
+            </div>
+            <ThemeSelect
+              id="mobile-theme-preference"
+              value={themePreference}
+              onChange={setThemePreference}
+            />
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onLockNow}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+              >
+                <LockKeyhole size={16} aria-hidden="true" />
+                Lock now
+              </button>
+              <button
+                type="button"
+                onClick={() => setPinModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+              >
+                <KeyRound size={16} aria-hidden="true" />
+                Change PIN
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -177,6 +304,13 @@ function Navigation() {
           </button>
         </div>
       </nav>
+
+      {pinModalOpen && (
+        <ChangeAppPinModal
+          onClose={() => setPinModalOpen(false)}
+          onSave={onSavePin}
+        />
+      )}
     </>
   );
 }

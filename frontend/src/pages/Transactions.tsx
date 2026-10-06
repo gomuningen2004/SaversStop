@@ -25,11 +25,19 @@ function Transactions() {
     dateFilter,
     customStartDate,
     customEndDate,
+    selectedAccount,
+    selectedCategory,
+    hasActiveFilters,
     handleFilterChange,
     handleStartDateChange,
     handleEndDateChange,
+    handleAccountChange,
+    handleCategoryChange,
+    resetFilters,
     categoryNames,
     getAccountName,
+    accounts,
+    categories,
     regularTransactions,
     transfers,
     transactionPager,
@@ -37,6 +45,7 @@ function Transactions() {
     setTransactionPage,
     setTransferPage,
   } = useTransactionsPage();
+  const hasCategoryFilter = selectedCategory !== 'all';
 
   /* ---------- Render ---------- */
 
@@ -83,36 +92,55 @@ function Transactions() {
         value={dateFilter}
         startDate={customStartDate}
         endDate={customEndDate}
+        selectedAccount={selectedAccount}
+        selectedCategory={selectedCategory}
+        hasActiveFilters={hasActiveFilters}
+        accounts={accounts}
+        categories={categories}
         onChange={handleFilterChange}
         onStartDateChange={handleStartDateChange}
         onEndDateChange={handleEndDateChange}
+        onAccountChange={handleAccountChange}
+        onCategoryChange={handleCategoryChange}
+        onReset={resetFilters}
       />
 
-      {/*
-        Stacked on mobile/tablet, side by side on large screens
-        (transactions 3/5, self transfers 2/5).
-      */}
-      <div className="grid gap-10 lg:grid-cols-2 lg:items-start lg:gap-8">
+      <div
+        className={`grid gap-10 lg:items-start lg:gap-8 ${
+          hasCategoryFilter ? 'grid-cols-1' : 'lg:grid-cols-2'
+        }`}
+      >
         {/* TRANSACTIONS */}
         <section>
-          <div className="mb-5">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Transactions
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Your income and expenses.
-            </p>
+          <div className="mb-5 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Transactions
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Your income and expenses.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+              {regularTransactions.length}{' '}
+              {regularTransactions.length === 1 ? 'entry' : 'entries'}
+            </span>
           </div>
 
           {regularTransactions.length === 0 ? (
             <div className={emptyStateClass}>
-              No transactions found for this date range.
+              No transactions found for the selected filters.
             </div>
           ) : (
             <>
               <DateGroups
                 items={transactionPager.items}
                 getDate={(t) => t.transactionDate}
+                itemsClassName={
+                  hasCategoryFilter
+                    ? 'grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4'
+                    : undefined
+                }
                 renderItem={(t) => (
                   <TransactionRow
                     key={t.id}
@@ -133,42 +161,50 @@ function Transactions() {
         </section>
 
         {/* SELF TRANSFERS */}
-        <section>
-          <div className="mb-5">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Self Transfers
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Money moved between your own accounts.
-            </p>
-          </div>
-
-          {transfers.length === 0 ? (
-            <div className={emptyStateClass}>
-              No self transfers found for this date range.
+        {!hasCategoryFilter && (
+          <section>
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Self Transfers
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Money moved between your own accounts.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                {transfers.length}{' '}
+                {transfers.length === 1 ? 'transfer' : 'transfers'}
+              </span>
             </div>
-          ) : (
-            <>
-              <DateGroups
-                items={transferPager.items}
-                getDate={(t) => t.sent.transactionDate}
-                renderItem={(transfer) => (
-                  <TransferRow
-                    key={transfer.id}
-                    transfer={transfer}
-                    getAccountName={getAccountName}
-                  />
-                )}
-              />
 
-              <Pagination
-                currentPage={transferPager.page}
-                totalPages={transferPager.totalPages}
-                onPageChange={setTransferPage}
-              />
-            </>
-          )}
-        </section>
+            {transfers.length === 0 ? (
+              <div className={emptyStateClass}>
+                No self transfers found for this date range and account.
+              </div>
+            ) : (
+              <>
+                <DateGroups
+                  items={transferPager.items}
+                  getDate={(t) => t.sent.transactionDate}
+                  renderItem={(transfer) => (
+                    <TransferRow
+                      key={transfer.id}
+                      transfer={transfer}
+                      getAccountName={getAccountName}
+                    />
+                  )}
+                />
+
+                <Pagination
+                  currentPage={transferPager.page}
+                  totalPages={transferPager.totalPages}
+                  onPageChange={setTransferPage}
+                />
+              </>
+            )}
+          </section>
+        )}
       </div>
 
       <AddTransactionModal

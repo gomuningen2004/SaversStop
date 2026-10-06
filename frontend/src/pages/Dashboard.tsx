@@ -1,7 +1,6 @@
 import AccountBalances from '../components/dashboard/AccountBalances';
 import { useDashboardData } from '../hooks/useDashboardData';
 
-
 function Dashboard() {
   const { sortedAccounts, totalFunds, loading, error } = useDashboardData();
 
@@ -22,7 +21,7 @@ function Dashboard() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8 pb-24 lg:pb-8">
+    <main className="mx-auto max-w-7xl px-4 py-5 pb-24 sm:px-6 lg:py-8 lg:pb-8">
       <AccountBalances accounts={sortedAccounts} totalFunds={totalFunds} />
     </main>
   );

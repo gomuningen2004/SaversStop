@@ -1,20 +1,39 @@
 import { Link as RouterLink } from 'react-router-dom';
+import { Settings2 } from 'lucide-react';
 
 import CategoryFilters from '../components/categories/CategoryFilters';
 import CategorySpendingBreakdown from '../components/categories/CategorySpendingBreakdown';
 import { useCategoriesPage } from '../hooks/useCategoriesPage';
 
+const pageClass =
+  'mx-auto w-full max-w-7xl px-4 py-5 pb-24 sm:px-6 lg:py-8 lg:pb-8';
+
 function Categories() {
   const {
-    accounts, categories, categorySpending, customFrom, customTo, error,
-    formatCategoryName, formatCurrency, loading, period, selectedAccount,
-    selectedCategory, setCustomFrom, setCustomTo, setPeriod, setSelectedAccount,
-    setSelectedCategory, totalSpent,
+    accounts,
+    categories,
+    categoryFlows,
+    customFrom,
+    customTo,
+    error,
+    formatCategoryName,
+    formatCurrency,
+    loading,
+    period,
+    selectedAccount,
+    selectedCategory,
+    setCustomFrom,
+    setCustomTo,
+    setPeriod,
+    setSelectedAccount,
+    setSelectedCategory,
+    totalMoneyIn,
+    totalMoneyOut,
   } = useCategoriesPage();
 
   if (loading) {
     return (
-      <main className="mx-auto max-w-6xl px-6 py-8 pb-24 lg:pb-8">
+      <main className={pageClass}>
         <p className="text-sm text-slate-500">Loading categories...</p>
       </main>
     );
@@ -22,40 +41,34 @@ function Categories() {
 
   if (error) {
     return (
-      <main className="mx-auto max-w-6xl px-6 py-8 pb-24 lg:pb-8">
+      <main className={pageClass}>
         <p className="text-sm text-red-500">{error}</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8 pb-24 lg:pb-8">
-      {/* ==================================================
-          PAGE HEADER
-      ================================================== */}
-
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <main className={pageClass}>
+      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Categories</h1>
-
+          <p className="text-xs font-semibold uppercase text-emerald-700">
+            Money flows
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900 sm:text-3xl">
+            Categories
+          </h1>
           <p className="mt-1 text-sm text-slate-500">
-            See where your money is being spent.
+            See income and expenses by category and account.
           </p>
         </div>
-
-        <div className="flex items-center gap-2">
-          <RouterLink
-            to="/categories/manage"
-            className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
-          >
-            Manage Categories
-          </RouterLink>
-        </div>
+        <RouterLink
+          to="/categories/manage"
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700"
+        >
+          <Settings2 size={16} aria-hidden="true" />
+          Manage Categories
+        </RouterLink>
       </div>
-
-      {/* ==================================================
-          FILTERS
-      ================================================== */}
 
       <CategoryFilters
         period={period}
@@ -73,31 +86,10 @@ function Categories() {
         formatCategoryName={formatCategoryName}
       />
 
-      {/* ==================================================
-          TOTAL SPENT
-      ================================================== */}
-
-      <section className="mb-8">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm text-slate-500">Total Spent</p>
-
-          <p className="mt-2 text-3xl font-semibold text-slate-900">
-            {formatCurrency(totalSpent)}
-          </p>
-
-          <p className="mt-2 text-xs text-slate-500">
-            Based on the selected filters
-          </p>
-        </div>
-      </section>
-
-      {/* ==================================================
-          CATEGORY BREAKDOWN
-      ================================================== */}
-
       <CategorySpendingBreakdown
-        categories={categorySpending}
-        totalSpent={totalSpent}
+        categories={categoryFlows}
+        totalMoneyIn={totalMoneyIn}
+        totalMoneyOut={totalMoneyOut}
         formatCurrency={formatCurrency}
         formatCategoryName={formatCategoryName}
       />

@@ -1,3 +1,5 @@
+import { ArrowDownRight, ArrowUpRight, Landmark } from 'lucide-react';
+
 import { formatCurrency } from '../../utils/accounts';
 
 type NetWorthSummaryProps = {
@@ -14,43 +16,75 @@ function NetWorthSummary({
   accountCount,
 }: NetWorthSummaryProps) {
   return (
-    <div className="mb-8 rounded-xl border border-slate-200 bg-white p-6">
-      <p className="text-sm font-medium text-slate-500">Net Worth</p>
-
-      <p
-        className={`mt-2 text-3xl font-semibold ${
-          netWorth >= 0 ? 'text-slate-900' : 'text-red-600'
-        }`}
-      >
-        {formatCurrency(Math.abs(netWorth))}
-      </p>
-
-      <div className="mt-5 grid gap-4 sm:grid-cols-3">
-        <div>
-          <p className="text-xs text-slate-500">Total Assets</p>
-
-          <p className="mt-1 text-lg font-semibold text-green-600">
-            {formatCurrency(totalAssets)}
+    <section className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <div
+          className={`p-5 sm:p-7 ${
+            netWorth < 0 ? 'bg-rose-50' : 'bg-emerald-50'
+          }`}
+        >
+          <p className="text-sm font-medium text-slate-600">Net worth</p>
+          <p
+            className={`mt-3 break-words text-3xl font-semibold sm:text-4xl ${
+              netWorth < 0 ? 'text-rose-700' : 'text-emerald-800'
+            }`}
+          >
+            {formatCurrency(netWorth)}
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            Assets minus liabilities
           </p>
         </div>
 
-        <div>
-          <p className="text-xs text-slate-500">Total Liabilities</p>
+        <div className="grid sm:grid-cols-3 sm:divide-x sm:divide-slate-200">
+          <div className="border-t border-slate-200 p-5 sm:border-t-0 sm:p-6">
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+              <ArrowUpRight
+                size={15}
+                className="text-emerald-700"
+                aria-hidden="true"
+              />
+              Total assets
+            </div>
+            <p
+              className={`mt-3 text-lg font-semibold tabular-nums ${
+                totalAssets < 0 ? 'text-rose-700' : 'text-emerald-700'
+              }`}
+            >
+              {formatCurrency(totalAssets)}
+            </p>
+          </div>
 
-          <p className="mt-1 text-lg font-semibold text-red-600">
-            {formatCurrency(totalLiabilities)}
-          </p>
-        </div>
+          <div className="border-t border-slate-200 p-5 sm:border-t-0 sm:p-6">
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+              <ArrowDownRight
+                size={15}
+                className="text-rose-700"
+                aria-hidden="true"
+              />
+              Total liabilities
+            </div>
+            <p className="mt-3 text-lg font-semibold text-rose-700 tabular-nums">
+              {formatCurrency(totalLiabilities)}
+            </p>
+          </div>
 
-        <div>
-          <p className="text-xs text-slate-500">Accounts</p>
-
-          <p className="mt-1 text-lg font-semibold text-slate-900">
-            {accountCount}
-          </p>
+          <div className="border-t border-slate-200 p-5 sm:border-t-0 sm:p-6">
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+              <Landmark
+                size={15}
+                className="text-slate-500"
+                aria-hidden="true"
+              />
+              Active accounts
+            </div>
+            <p className="mt-3 text-lg font-semibold text-slate-900 tabular-nums">
+              {accountCount}
+            </p>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
