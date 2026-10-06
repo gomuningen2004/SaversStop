@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
-import type { Account, Category } from '../types';
+import type { Account, Category } from '../../types';
 
 const API_URL = 'http://127.0.0.1:8000';
 

@@ -1,4 +1,4 @@
-import type { DateFilter } from '../utils/transactions';
+import type { DateFilter } from '../../utils/transactions';
 
 const OPTIONS: { value: DateFilter; label: string }[] = [
   { value: 'this-month', label: 'This Month' },

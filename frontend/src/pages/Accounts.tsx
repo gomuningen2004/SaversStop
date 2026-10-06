@@ -1,70 +1,30 @@
-import { useMemo, useState } from 'react';
-
 import { Plus } from 'lucide-react';
 
-import AddAccountModal from '../components/AddAccountModal';
-import AccountCard from '../components/AccountCard';
-import NetWorthSummary from '../components/NetWorthSummary';
+import AccountModal from '../components/accounts/AccountModal';
+import AccountSection from '../components/accounts/AccountSection';
+import NetWorthSummary from '../components/accounts/NetWorthSummary';
 
-import { useAccounts } from '../hooks/useAccounts';
-
-import {
-  calculateNetWorth,
-  calculateTotalAssets,
-  calculateTotalLiabilities,
-  getActiveAccounts,
-  getAssetAccounts,
-  getLiabilityAccounts,
-  formatCurrency,
-} from '../utils/accounts';
+import { useAccountsPage } from '../hooks/useAccountsPage';
 
 function Accounts() {
   const {
-    accounts,
     accountTypes,
     loading,
     error,
-    loadAccounts,
     deactivateAccount,
-  } = useAccounts();
-
-  const [showAddAccountModal, setShowAddAccountModal] = useState(false);
-
-  /*
-   * ---------------------------------------------------------
-   * ACCOUNT GROUPS
-   * ---------------------------------------------------------
-   */
-
-  const activeAccounts = useMemo(() => getActiveAccounts(accounts), [accounts]);
-
-  const assetAccounts = useMemo(
-    () => getAssetAccounts(accounts, accountTypes),
-    [accounts, accountTypes],
-  );
-
-  const liabilityAccounts = useMemo(
-    () => getLiabilityAccounts(accounts, accountTypes),
-    [accounts, accountTypes],
-  );
-
-  /*
-   * ---------------------------------------------------------
-   * TOTALS
-   * ---------------------------------------------------------
-   */
-
-  const totalAssets = useMemo(
-    () => calculateTotalAssets(assetAccounts),
-    [assetAccounts],
-  );
-
-  const totalLiabilities = useMemo(
-    () => calculateTotalLiabilities(liabilityAccounts),
-    [liabilityAccounts],
-  );
-
-  const netWorth = calculateNetWorth(totalAssets, totalLiabilities);
+    isAccountModalOpen,
+    accountToEdit,
+    openAddAccountModal,
+    openEditAccountModal,
+    closeAccountModal,
+    handleAccountSaveSuccess,
+    activeAccounts,
+    assetAccounts,
+    liabilityAccounts,
+    totalAssets,
+    totalLiabilities,
+    netWorth,
+  } = useAccountsPage();
 
   /*
    * ---------------------------------------------------------
@@ -102,7 +62,7 @@ function Accounts() {
 
           <button
             type="button"
-            onClick={() => setShowAddAccountModal(true)}
+            onClick={openAddAccountModal}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
           >
             <Plus size={18} />
@@ -127,86 +87,38 @@ function Accounts() {
           accountCount={activeAccounts.length}
         />
 
-        {/* ASSETS */}
+        <AccountSection
+          title="Assets"
+          description="Money and things you own."
+          total={totalAssets}
+          totalColor="green"
+          accounts={assetAccounts}
+          accountTypes={accountTypes}
+          emptyMessage="No asset accounts."
+          onEdit={openEditAccountModal}
+          onDeactivate={deactivateAccount}
+        />
 
-        <section className="mb-8">
-          <div className="mb-4 flex items-end justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Assets</h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Money and things you own.
-              </p>
-            </div>
-
-            <p className="text-sm font-semibold text-green-600">
-              {formatCurrency(totalAssets)}
-            </p>
-          </div>
-
-          {assetAccounts.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
-              <p className="text-sm text-slate-500">No asset accounts.</p>
-            </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {assetAccounts.map((account) => (
-                <AccountCard
-                  key={account.id}
-                  account={account}
-                  accountTypes={accountTypes}
-                  onDeactivate={deactivateAccount}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* LIABILITIES */}
-
-        <section>
-          <div className="mb-4 flex items-end justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">
-                Liabilities
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-500">Money you owe.</p>
-            </div>
-
-            <p className="text-sm font-semibold text-red-600">
-              {formatCurrency(totalLiabilities)}
-            </p>
-          </div>
-
-          {liabilityAccounts.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
-              <p className="text-sm text-slate-500">No liabilities.</p>
-            </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {liabilityAccounts.map((account) => (
-                <AccountCard
-                  key={account.id}
-                  account={account}
-                  accountTypes={accountTypes}
-                  onDeactivate={deactivateAccount}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+        <AccountSection
+          title="Liabilities"
+          description="Money you owe."
+          total={totalLiabilities}
+          totalColor="red"
+          accounts={liabilityAccounts}
+          accountTypes={accountTypes}
+          emptyMessage="No liabilities."
+          onEdit={openEditAccountModal}
+          onDeactivate={deactivateAccount}
+        />
       </div>
 
       {/* ADD ACCOUNT MODAL */}
 
-      <AddAccountModal
-        isOpen={showAddAccountModal}
-        onClose={() => setShowAddAccountModal(false)}
-        onSuccess={async () => {
-          setShowAddAccountModal(false);
-          await loadAccounts();
-        }}
+      <AccountModal
+        isOpen={isAccountModalOpen}
+        account={accountToEdit}
+        onClose={closeAccountModal}
+        onSuccess={handleAccountSaveSuccess}
       />
     </main>
   );

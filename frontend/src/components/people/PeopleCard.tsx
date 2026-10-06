@@ -1,6 +1,6 @@
 import { HandCoins, Plus, Receipt } from 'lucide-react';
 
-import type { Person } from '../types';
+import type { Person } from '../../types';
 
 type PeopleCardProps = {
   person: Person;

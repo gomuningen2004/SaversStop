@@ -2,20 +2,27 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 
 import type {
+  Account,
   AccountClassification,
   AccountType,
   AccountTypesResponse,
-} from '../types';
+} from '../../types';
 
 const API_URL = 'http://127.0.0.1:8000';
 
-interface AddAccountModalProps {
+interface AccountModalProps {
   isOpen: boolean;
+  account: Account | null;
   onClose: () => void;
   onSuccess: () => void | Promise<void>;
 }
 
-function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccountModalProps) {
+function AccountModal({
+  isOpen,
+  account,
+  onClose,
+  onSuccess,
+}: AccountModalProps) {
   const [accountTypes, setAccountTypes] = useState<AccountType[]>([]);
 
   const [name, setName] = useState('');
@@ -60,15 +67,21 @@ function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccountModalProps) {
         );
 
         const activeTypes = normalizedAccountTypes.filter(
-          (accountType) => accountType.active,
+          (accountType) =>
+            accountType.active || accountType.id === account?.accountTypeId,
         );
 
         setAccountTypes(activeTypes);
 
-        if (activeTypes.length > 0) {
-          setTypeId(activeTypes[0].id);
-          setClassification(activeTypes[0].classification);
-        }
+        const selectedType =
+          activeTypes.find(
+            (accountType) => accountType.id === account?.accountTypeId,
+          ) ?? activeTypes[0];
+
+        setName(account?.name ?? '');
+        setBalance(account ? String(Math.abs(account.currentBalance)) : '');
+        setTypeId(selectedType?.id ?? '');
+        setClassification(selectedType?.classification ?? 'asset');
       } catch (err) {
         console.error('Failed to load account types:', err);
 
@@ -81,7 +94,7 @@ function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccountModalProps) {
     }
 
     loadAccountTypes();
-  }, [isOpen]);
+  }, [account, isOpen]);
 
   /*
    * RESET FORM
@@ -183,33 +196,43 @@ function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccountModalProps) {
     setSubmitting(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/accounts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        account
+          ? `${API_URL}/api/accounts/${account.id}`
+          : `${API_URL}/api/accounts`,
+        {
+          method: account ? 'PATCH' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: trimmedName,
+            account_type_id: typeId,
+            current_balance: Math.abs(numericBalance),
+            ...(!account && { active: true }),
+          }),
         },
-        body: JSON.stringify({
-          name: trimmedName,
-          account_type_id: typeId,
-          current_balance: Math.abs(numericBalance),
-          active: true,
-        }),
-      });
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
 
-        throw new Error(errorData?.detail || 'Failed to create account.');
+        throw new Error(
+          errorData?.detail ||
+            `Failed to ${account ? 'update' : 'create'} account.`,
+        );
       }
 
       resetForm();
 
       await onSuccess();
     } catch (err) {
-      console.error('Failed to create account:', err);
+      console.error(`Failed to ${account ? 'update' : 'create'} account:`, err);
 
       setError(
-        err instanceof Error ? err.message : 'Failed to create account.',
+        err instanceof Error
+          ? err.message
+          : `Failed to ${account ? 'update' : 'create'} account.`,
       );
     } finally {
       setSubmitting(false);
@@ -239,11 +262,13 @@ function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccountModalProps) {
         <div className="mb-6 flex items-start justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
-              Add Account
+              {account ? 'Edit Account' : 'Add Account'}
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Add an account to your financial picture.
+              {account
+                ? 'Update your account details.'
+                : 'Add an account to your financial picture.'}
             </p>
           </div>
 
@@ -282,7 +307,7 @@ function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccountModalProps) {
               onChange={(event) => setName(event.target.value)}
               placeholder="e.g. HDFC Bank"
               className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-              disabled={submitting}
+              disabled={submitting || loadingTypes}
             />
           </label>
 
@@ -356,7 +381,7 @@ function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccountModalProps) {
                 value={balance}
                 onChange={(event) => setBalance(event.target.value)}
                 placeholder="0.00"
-                disabled={submitting}
+                disabled={submitting || loadingTypes}
                 className="w-full rounded-lg border border-slate-200 py-2.5 pl-8 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50"
               />
             </div>
@@ -381,7 +406,13 @@ function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccountModalProps) {
             disabled={submitting || loadingTypes}
             className="flex-1 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? 'Adding...' : 'Add Account'}
+            {submitting
+              ? account
+                ? 'Saving...'
+                : 'Adding...'
+              : account
+                ? 'Save Changes'
+                : 'Add Account'}
           </button>
         </div>
       </div>
@@ -389,4 +420,4 @@ function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccountModalProps) {
   );
 }
 
-export default AddAccountModal;
+export default AccountModal;

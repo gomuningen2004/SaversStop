@@ -1,11 +1,11 @@
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight } from 'lucide-react';
 
-import type { Transaction } from '../types';
+import type { Transaction } from '../../types';
 import {
   formatCategory,
   formatCurrency,
   type Transfer,
-} from '../utils/transactions';
+} from '../../utils/transactions';
 
 const rowClass =
   'flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 transition hover:border-slate-300 hover:shadow-sm sm:gap-4 sm:px-4 sm:py-4';

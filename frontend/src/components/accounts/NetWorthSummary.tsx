@@ -1,4 +1,4 @@
-import { formatCurrency } from '../utils/accounts';
+import { formatCurrency } from '../../utils/accounts';
 
 type NetWorthSummaryProps = {
   netWorth: number;

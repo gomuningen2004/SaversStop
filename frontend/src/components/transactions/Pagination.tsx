@@ -53,7 +53,9 @@ function Pagination({
   totalPages,
   onPageChange,
 }: PaginationProps) {
-  if (totalPages <= 1) return null;
+  if (totalPages <= 1) {
+    return null;
+  }
 
   const isFirst = currentPage === 1;
   const isLast = currentPage === totalPages;

@@ -8,13 +8,14 @@ import {
   Wallet,
 } from 'lucide-react';
 
-import type { Account, AccountType } from '../types';
+import type { Account, AccountType } from '../../types';
 
-import { formatCurrency, getAccountType } from '../utils/accounts';
+import { formatCurrency, getAccountType } from '../../utils/accounts';
 
 type AccountCardProps = {
   account: Account;
   accountTypes: AccountType[];
+  onEdit: (account: Account) => void;
   onDeactivate: (account: Account) => void;
 };
 
@@ -31,6 +32,7 @@ const accountTypeIcons: Record<string, typeof Landmark> = {
 function AccountCard({
   account,
   accountTypes,
+  onEdit,
   onDeactivate,
 }: AccountCardProps) {
   const accountType = getAccountType(account, accountTypes);
@@ -69,6 +71,15 @@ function AccountCard({
             <div className="absolute right-0 top-9 z-10 w-32 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
               <button
                 type="button"
+                onClick={(event) => {
+                  const actionsMenu = event.currentTarget.closest('details');
+
+                  if (actionsMenu) {
+                    actionsMenu.open = false;
+                  }
+
+                  onEdit(account);
+                }}
                 className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
               >
                 <Pencil size={14} />

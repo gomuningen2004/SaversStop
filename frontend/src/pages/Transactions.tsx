@@ -1,21 +1,12 @@
-import { useMemo, useState, type ReactNode } from 'react';
-
-import AddTransactionModal from '../components/AddTransactionModal';
-import DateRangeFilter from '../components/Daterangefilter';
-import Pagination from '../components/Pagination';
-import { TransactionRow, TransferRow } from '../components/Transactionrows';
-import { useTransactionData } from '../hooks/useTransactionData';
+import AddTransactionModal from '../components/transactions/AddTransactionModal';
+import DateGroups from '../components/transactions/DateGroups';
+import DateRangeFilter from '../components/transactions/DateRangeFilter';
+import Pagination from '../components/transactions/Pagination';
 import {
-  buildTransfers,
-  formatDate,
-  getDateKey,
-  getDateRange,
-  groupByDate,
-  paginate,
-  type DateFilter,
-} from '../utils/transactions';
-
-const ITEMS_PER_PAGE = 10;
+  TransactionRow,
+  TransferRow,
+} from '../components/transactions/TransactionRows';
+import { useTransactionsPage } from '../hooks/useTransactionsPage';
 
 /* Wider page so the two lists can sit side by side on large screens. */
 const pageClass = 'mx-auto max-w-7xl px-4 py-5 pb-24 sm:px-6 lg:py-8 lg:pb-8';
@@ -23,124 +14,29 @@ const pageClass = 'mx-auto max-w-7xl px-4 py-5 pb-24 sm:px-6 lg:py-8 lg:pb-8';
 const emptyStateClass =
   'rounded-xl border border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-500';
 
-/** Renders items grouped under date headings (newest date first). */
-function DateGroups<T>({
-  items,
-  getDate,
-  renderItem,
-}: {
-  items: T[];
-  getDate: (item: T) => string;
-  renderItem: (item: T) => ReactNode;
-}) {
-  const groups = groupByDate(items, getDate);
-  const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
-
-  return (
-    <div className="space-y-8">
-      {dates.map((date) => (
-        <div key={date}>
-          <h3 className="mb-3 text-sm font-semibold text-slate-700">
-            {formatDate(date)}
-          </h3>
-
-          <div className="space-y-2">{groups[date].map(renderItem)}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function Transactions() {
-  const { transactions, categories, accounts, loading, error, reload } =
-    useTransactionData();
-
-  const [showAddModal, setShowAddModal] = useState(false);
-
-  const [dateFilter, setDateFilter] = useState<DateFilter>('this-year');
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
-
-  const [transactionPage, setTransactionPage] = useState(1);
-  const [transferPage, setTransferPage] = useState(1);
-
-  /* Any change to the filter sends both lists back to page 1. */
-  const resetPages = () => {
-    setTransactionPage(1);
-    setTransferPage(1);
-  };
-
-  const handleFilterChange = (filter: DateFilter) => {
-    setDateFilter(filter);
-    resetPages();
-  };
-
-  const handleStartDateChange = (date: string) => {
-    setCustomStartDate(date);
-    resetPages();
-  };
-
-  const handleEndDateChange = (date: string) => {
-    setCustomEndDate(date);
-    resetPages();
-  };
-
-  /* ---------- Lookups ---------- */
-
-  const categoryNames = useMemo(
-    () => new Map(categories.map((c) => [c.id, c.name])),
-    [categories],
-  );
-
-  const accountNames = useMemo(
-    () => new Map(accounts.map((a) => [a.id, a.name])),
-    [accounts],
-  );
-
-  const getAccountName = (id: string) =>
-    accountNames.get(id) ?? 'Unknown Account';
-
-  /* ---------- Filtering ---------- */
-
-  const filteredTransactions = useMemo(() => {
-    if (dateFilter === 'all-time') return transactions;
-
-    const { start, end } = getDateRange(
-      dateFilter,
-      customStartDate,
-      customEndDate,
-    );
-
-    // Incomplete or inverted custom range -> nothing to show.
-    if (!start || !end || start > end) return [];
-
-    return transactions.filter((t) => {
-      const date = getDateKey(t.transactionDate);
-      return date >= start && date <= end;
-    });
-  }, [transactions, dateFilter, customStartDate, customEndDate]);
-
-  const regularTransactions = useMemo(
-    () =>
-      filteredTransactions
-        .filter((t) => !t.transferId)
-        .sort((a, b) => b.transactionDate.localeCompare(a.transactionDate)),
-    [filteredTransactions],
-  );
-
-  const transfers = useMemo(
-    () => buildTransfers(filteredTransactions),
-    [filteredTransactions],
-  );
-
-  /* ---------- Pagination ---------- */
-
-  const transactionPager = paginate(
+  const {
+    loading,
+    error,
+    reload,
+    showAddModal,
+    openAddModal,
+    closeAddModal,
+    dateFilter,
+    customStartDate,
+    customEndDate,
+    handleFilterChange,
+    handleStartDateChange,
+    handleEndDateChange,
+    categoryNames,
+    getAccountName,
     regularTransactions,
-    transactionPage,
-    ITEMS_PER_PAGE,
-  );
-  const transferPager = paginate(transfers, transferPage, ITEMS_PER_PAGE);
+    transfers,
+    transactionPager,
+    transferPager,
+    setTransactionPage,
+    setTransferPage,
+  } = useTransactionsPage();
 
   /* ---------- Render ---------- */
 
@@ -175,7 +71,7 @@ function Transactions() {
 
         <button
           type="button"
-          onClick={() => setShowAddModal(true)}
+          onClick={openAddModal}
           className="shrink-0 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 sm:px-4 sm:py-2.5"
         >
           <span className="sm:hidden">+ Add</span>
@@ -277,7 +173,7 @@ function Transactions() {
 
       <AddTransactionModal
         isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={closeAddModal}
         onSuccess={reload}
       />
     </main>
