@@ -5,8 +5,8 @@ import {
   PiggyBank,
   TrendingUp,
 } from 'lucide-react';
-
 import {
+  CartesianGrid,
   Cell,
   Legend,
   Line,
@@ -17,20 +17,18 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  Bar,
-  BarChart,
-  CartesianGrid,
 } from 'recharts';
 
 import type { Category, CategoriesResponse, Transaction } from '../types';
 
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+const API_URL = 'http://127.0.0.1:8000';
+
+/* Categories hidden from the spending breakdown (compared in lowercase). */
+const EXCLUDED_CATEGORIES = new Set(['unknown', 'other']);
+
+/* Donut shows the top N categories; everything else is grouped together. */
+const MAX_DONUT_SLICES = 7;
+const REMAINING_COLOR = '#cbd5e1';
 
 const chartColors = [
   '#6366f1',
@@ -50,6 +48,7 @@ type CategorySpending = {
   name: string;
   amount: number;
   percentage: number;
+  color: string;
 };
 
 type MonthlyData = {
@@ -57,39 +56,53 @@ type MonthlyData = {
   label: string;
   income: number;
   expenses: number;
-  savings: number;
 };
 
-function getMonthKey(date: string) {
-  return date.slice(0, 7);
-}
+/* Shape returned by the backend (snake_case). */
+type ApiTransaction = {
+  id: string;
+  transaction_date: string;
+  reason?: string | null;
+  category_id: string | null;
+  account_id: string;
+  amount: number | string;
+  type: 'sent' | 'received';
+  transfer_id?: string | null;
+};
+
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+
+const formatSigned = (amount: number) =>
+  `${amount < 0 ? '-' : ''}${formatCurrency(Math.abs(amount))}`;
+
+const getMonthKey = (date: string) => date.slice(0, 7);
 
 function formatMonth(month: string) {
   const [year, monthNumber] = month.split('-');
-
   const date = new Date(Number(year), Number(monthNumber) - 1, 1);
 
-  return date.toLocaleDateString('en-IN', {
-    month: 'short',
-    year: 'numeric',
-  });
+  return date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
 }
 
 function getRecentMonths(count: number) {
-  const months: string[] = [];
-
   const now = new Date();
 
-  for (let i = count - 1; i >= 0; i--) {
-    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-
-    const year = date.getFullYear();
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(
+      now.getFullYear(),
+      now.getMonth() - (count - 1 - index),
+      1,
+    );
     const month = String(date.getMonth() + 1).padStart(2, '0');
 
-    months.push(`${year}-${month}`);
-  }
-
-  return months;
+    return `${date.getFullYear()}-${month}`;
+  });
 }
 
 function Analytics() {
@@ -97,15 +110,9 @@ function Analytics() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
 
-  /*
-   * ---------------------------------------------------------
-   * LOAD TRANSACTIONS + CATEGORIES
-   * ---------------------------------------------------------
-   */
+  /* Load transactions + categories */
 
   useEffect(() => {
-    const API_URL = 'http://127.0.0.1:8000';
-
     const loadData = async () => {
       try {
         const [transactionsResponse, categoriesResponse] = await Promise.all([
@@ -125,53 +132,14 @@ function Analytics() {
           );
         }
 
-        /*
-         * -----------------------------------------------------
-         * TRANSACTIONS
-         * -----------------------------------------------------
-         */
-
         const transactionsData = (await transactionsResponse.json()) as {
-          transactions: Array<{
-            id: string;
-            transaction_date: string;
-            reason?: string | null;
-            category_id: string | null;
-            account_id: string;
-            amount: number | string;
-            type: 'sent' | 'received';
-            transfer_id?: string | null;
-          }>;
+          transactions: ApiTransaction[];
         };
-
-        /*
-         * -----------------------------------------------------
-         * CATEGORIES
-         * -----------------------------------------------------
-         */
-
         const categoriesData =
           (await categoriesResponse.json()) as CategoriesResponse;
 
-        /*
-         * -----------------------------------------------------
-         * NORMALIZE TRANSACTIONS
-         *
-         * Backend:
-         * transaction_date
-         * category_id
-         * account_id
-         * transfer_id
-         *
-         * Frontend:
-         * transactionDate
-         * categoryId
-         * accountId
-         * transferId
-         * -----------------------------------------------------
-         */
-
-        const normalizedTransactions: Transaction[] =
+        /* snake_case (backend) -> camelCase (frontend) */
+        setTransactions(
           transactionsData.transactions.map((transaction) => ({
             id: transaction.id,
             transactionDate: transaction.transaction_date,
@@ -181,24 +149,16 @@ function Analytics() {
             amount: Number(transaction.amount),
             type: transaction.type,
             transferId: transaction.transfer_id ?? null,
-          }));
+          })),
+        );
 
-        /*
-         * -----------------------------------------------------
-         * NORMALIZE CATEGORIES
-         * -----------------------------------------------------
-         */
-
-        const normalizedCategories: Category[] = categoriesData.categories.map(
-          (category) => ({
+        setCategories(
+          categoriesData.categories.map((category) => ({
             id: category.id,
             name: category.name,
             active: category.active,
-          }),
+          })),
         );
-
-        setTransactions(normalizedTransactions);
-        setCategories(normalizedCategories);
       } catch (error) {
         console.error('Failed to load analytics data:', error);
       } finally {
@@ -210,65 +170,41 @@ function Analytics() {
   }, []);
 
   /*
-   * ---------------------------------------------------------
-   * EXCLUDE SELF TRANSFERS
-   *
-   * Transfers are still present in transaction history,
-   * but must not count as income or expenses.
-   * ---------------------------------------------------------
+   * Self transfers stay in the history but must not count
+   * as income or expenses.
    */
+  const financialTransactions = useMemo(
+    () => transactions.filter((transaction) => transaction.transferId === null),
+    [transactions],
+  );
 
-  const financialTransactions = useMemo(() => {
-    return transactions.filter(
-      (transaction) => transaction.transferId === null,
-    );
-  }, [transactions]);
+  /* Summary */
 
-  /*
-   * ---------------------------------------------------------
-   * SUMMARY CALCULATIONS
-   * ---------------------------------------------------------
-   */
+  const totalIncome = useMemo(
+    () =>
+      financialTransactions
+        .filter((transaction) => transaction.type === 'received')
+        .reduce((total, transaction) => total + transaction.amount, 0),
+    [financialTransactions],
+  );
 
-  const totalIncome = useMemo(() => {
-    return financialTransactions
-      .filter((transaction) => transaction.type === 'received')
-      .reduce((total, transaction) => total + transaction.amount, 0);
-  }, [financialTransactions]);
+  const totalExpenses = useMemo(
+    () =>
+      financialTransactions
+        .filter((transaction) => transaction.type === 'sent')
+        .reduce((total, transaction) => total + transaction.amount, 0),
+    [financialTransactions],
+  );
 
-  const totalExpenses = useMemo(() => {
-    return financialTransactions
-      .filter((transaction) => transaction.type === 'sent')
-      .reduce((total, transaction) => total + transaction.amount, 0);
-  }, [financialTransactions]);
+  const netSavings = totalIncome - totalExpenses;
+  const savingsRate = totalIncome === 0 ? 0 : (netSavings / totalIncome) * 100;
 
-  const netSavings = useMemo(() => {
-    return totalIncome - totalExpenses;
-  }, [totalIncome, totalExpenses]);
+  /* Spending by category */
 
-  const savingsRate = useMemo(() => {
-    if (totalIncome === 0) {
-      return 0;
-    }
-
-    return (netSavings / totalIncome) * 100;
-  }, [totalIncome, netSavings]);
-
-  /*
-   * ---------------------------------------------------------
-   * CATEGORY LOOKUP
-   * ---------------------------------------------------------
-   */
-
-  const categoryMap = useMemo(() => {
-    return new Map(categories.map((category) => [category.id, category.name]));
-  }, [categories]);
-
-  /*
-   * ---------------------------------------------------------
-   * SPENDING BY CATEGORY
-   * ---------------------------------------------------------
-   */
+  const categoryMap = useMemo(
+    () => new Map(categories.map((category) => [category.id, category.name])),
+    [categories],
+  );
 
   const categorySpending = useMemo<CategorySpending[]>(() => {
     const spending = new Map<string, number>();
@@ -277,129 +213,81 @@ function Analytics() {
       .filter((transaction) => transaction.type === 'sent')
       .forEach((transaction) => {
         const current = spending.get(transaction.categoryId) ?? 0;
-
         spending.set(transaction.categoryId, current + transaction.amount);
       });
 
-    const total = Array.from(spending.values()).reduce(
-      (sum, amount) => sum + amount,
-      0,
-    );
-
-    return Array.from(spending.entries())
+    const visible = Array.from(spending.entries())
       .map(([categoryId, amount]) => ({
         id: categoryId,
         name: categoryMap.get(categoryId) ?? 'Unknown',
         amount,
-        percentage: total > 0 ? (amount / total) * 100 : 0,
       }))
+      .filter(({ name }) => !EXCLUDED_CATEGORIES.has(name.toLowerCase()))
       .sort((a, b) => b.amount - a.amount);
+
+    /* Percentages are relative to the categories actually shown. */
+    const total = visible.reduce((sum, { amount }) => sum + amount, 0);
+
+    return visible.map((category, index) => ({
+      ...category,
+      percentage: total > 0 ? (category.amount / total) * 100 : 0,
+      color:
+        index < MAX_DONUT_SLICES
+          ? chartColors[index % chartColors.length]
+          : REMAINING_COLOR,
+    }));
   }, [financialTransactions, categoryMap]);
 
-  /*
-   * ---------------------------------------------------------
-   * LAST 12 MONTHS
-   * ---------------------------------------------------------
-   */
+  /* Donut: top categories + one grouped "Remaining" slice */
 
-  const recentMonths = useMemo(() => getRecentMonths(12), []);
+  const donutData = useMemo<CategorySpending[]>(() => {
+    const top = categorySpending.slice(0, MAX_DONUT_SLICES);
+    const rest = categorySpending.slice(MAX_DONUT_SLICES);
 
-  /*
-   * ---------------------------------------------------------
-   * MONTHLY ANALYTICS
-   * ---------------------------------------------------------
-   */
+    if (rest.length === 0) {
+      return top;
+    }
+
+    return [
+      ...top,
+      {
+        id: 'remaining',
+        name: 'Remaining',
+        amount: rest.reduce((sum, { amount }) => sum + amount, 0),
+        percentage: rest.reduce((sum, { percentage }) => sum + percentage, 0),
+        color: REMAINING_COLOR,
+      },
+    ];
+  }, [categorySpending]);
+
+  /* Income vs expenses, last 12 months */
 
   const monthlyData = useMemo<MonthlyData[]>(() => {
-    const monthly = new Map<
-      string,
-      {
-        income: number;
-        expenses: number;
-      }
-    >();
-
-    recentMonths.forEach((month) => {
-      monthly.set(month, {
-        income: 0,
-        expenses: 0,
-      });
-    });
+    const months = getRecentMonths(12);
+    const monthly = new Map(
+      months.map((month) => [month, { income: 0, expenses: 0 }]),
+    );
 
     financialTransactions.forEach((transaction) => {
-      const month = getMonthKey(transaction.transactionDate);
+      const entry = monthly.get(getMonthKey(transaction.transactionDate));
 
-      if (!monthly.has(month)) {
+      if (!entry) {
         return;
       }
 
-      const current = monthly.get(month)!;
-
       if (transaction.type === 'received') {
-        current.income += transaction.amount;
+        entry.income += transaction.amount;
       } else {
-        current.expenses += transaction.amount;
+        entry.expenses += transaction.amount;
       }
     });
 
-    return recentMonths.map((month) => {
-      const data = monthly.get(month)!;
-
-      return {
-        month,
-        label: formatMonth(month),
-        income: data.income,
-        expenses: data.expenses,
-        savings: data.income - data.expenses,
-      };
-    });
-  }, [financialTransactions, recentMonths]);
-
-  /*
-   * ---------------------------------------------------------
-   * AVERAGE MONTHLY SAVINGS
-   * ---------------------------------------------------------
-   */
-
-  const averageMonthlySavings = useMemo(() => {
-    if (monthlyData.length === 0) {
-      return 0;
-    }
-
-    return (
-      monthlyData.reduce((total, month) => total + month.savings, 0) /
-      monthlyData.length
-    );
-  }, [monthlyData]);
-
-  /*
-   * ---------------------------------------------------------
-   * PREVIOUS MONTH COMPARISON
-   * ---------------------------------------------------------
-   */
-
-  const currentMonthExpenses =
-    monthlyData.length > 0 ? monthlyData[monthlyData.length - 1].expenses : 0;
-
-  const previousMonthExpenses =
-    monthlyData.length > 1 ? monthlyData[monthlyData.length - 2].expenses : 0;
-
-  const expenseChange = useMemo(() => {
-    if (previousMonthExpenses === 0) {
-      return null;
-    }
-
-    return (
-      ((currentMonthExpenses - previousMonthExpenses) / previousMonthExpenses) *
-      100
-    );
-  }, [currentMonthExpenses, previousMonthExpenses]);
-
-  /*
-   * ---------------------------------------------------------
-   * LOADING
-   * ---------------------------------------------------------
-   */
+    return months.map((month) => ({
+      month,
+      label: formatMonth(month),
+      ...monthly.get(month)!,
+    }));
+  }, [financialTransactions]);
 
   if (loading) {
     return (
@@ -408,12 +296,6 @@ function Analytics() {
       </main>
     );
   }
-
-  /*
-   * ---------------------------------------------------------
-   * UI
-   * ---------------------------------------------------------
-   */
 
   return (
     <main className="px-6 py-8 pb-24">
@@ -431,8 +313,6 @@ function Analytics() {
         {/* SUMMARY */}
 
         <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* INCOME */}
-
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-50 text-green-600">
@@ -446,8 +326,6 @@ function Analytics() {
               {formatCurrency(totalIncome)}
             </p>
           </div>
-
-          {/* EXPENSES */}
 
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
@@ -465,8 +343,6 @@ function Analytics() {
             </p>
           </div>
 
-          {/* SAVINGS */}
-
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
@@ -481,11 +357,9 @@ function Analytics() {
                 netSavings >= 0 ? 'text-slate-900' : 'text-red-600'
               }`}
             >
-              {formatCurrency(Math.abs(netSavings))}
+              {formatSigned(netSavings)}
             </p>
           </div>
-
-          {/* SAVINGS RATE */}
 
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
@@ -505,50 +379,6 @@ function Analytics() {
             </p>
           </div>
         </div>
-
-        {/* SAVINGS SUMMARY */}
-
-        <section className="mb-6 rounded-xl border border-slate-200 bg-white p-6">
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Savings Summary
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              How much you're keeping after expenses.
-            </p>
-          </div>
-
-          <div className="grid gap-6 sm:grid-cols-3">
-            <div>
-              <p className="text-sm text-slate-500">Average Monthly Savings</p>
-
-              <p
-                className={`mt-1 text-xl font-semibold ${
-                  averageMonthlySavings >= 0 ? 'text-slate-900' : 'text-red-600'
-                }`}
-              >
-                {formatCurrency(Math.abs(averageMonthlySavings))}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-slate-500">Total Income</p>
-
-              <p className="mt-1 text-xl font-semibold text-green-600">
-                {formatCurrency(totalIncome)}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-slate-500">Total Expenses</p>
-
-              <p className="mt-1 text-xl font-semibold text-red-600">
-                {formatCurrency(totalExpenses)}
-              </p>
-            </div>
-          </div>
-        </section>
 
         {/* SPENDING BY CATEGORY */}
 
@@ -571,13 +401,13 @@ function Analytics() {
             </div>
           ) : (
             <div className="grid items-center gap-8 lg:grid-cols-2">
-              {/* DONUT */}
+              {/* DONUT (the list on the right acts as the legend) */}
 
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={categorySpending}
+                      data={donutData}
                       dataKey="amount"
                       nameKey="name"
                       cx="50%"
@@ -586,19 +416,14 @@ function Analytics() {
                       outerRadius={125}
                       paddingAngle={3}
                     >
-                      {categorySpending.map((_, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={chartColors[index % chartColors.length]}
-                        />
+                      {donutData.map((slice) => (
+                        <Cell key={slice.id} fill={slice.color} />
                       ))}
                     </Pie>
 
                     <Tooltip
                       formatter={(value) => formatCurrency(Number(value))}
                     />
-
-                    <Legend />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -606,7 +431,7 @@ function Analytics() {
               {/* CATEGORY LIST */}
 
               <div className="space-y-4">
-                {categorySpending.map((category, index) => (
+                {categorySpending.map((category) => (
                   <div
                     key={category.id}
                     className="flex items-center justify-between gap-4"
@@ -614,10 +439,7 @@ function Analytics() {
                     <div className="flex min-w-0 items-center gap-3">
                       <div
                         className="h-3 w-3 shrink-0 rounded-full"
-                        style={{
-                          backgroundColor:
-                            chartColors[index % chartColors.length],
-                        }}
+                        style={{ backgroundColor: category.color }}
                       />
 
                       <span className="truncate text-sm font-medium capitalize text-slate-700">
@@ -637,70 +459,6 @@ function Analytics() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-        </section>
-
-        {/* MONTHLY SPENDING */}
-
-        <section className="mb-6 rounded-xl border border-slate-200 bg-white p-6">
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Monthly Spending
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Your expenses over the last 12 months.
-            </p>
-          </div>
-
-          <div className="h-87.5">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-
-                <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-
-                <YAxis
-                  tick={{ fontSize: 12 }}
-                  tickFormatter={(value) => `₹${Number(value) / 1000}k`}
-                />
-
-                <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-
-                <Bar
-                  dataKey="expenses"
-                  name="Expenses"
-                  fill="#ef4444"
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {expenseChange !== null && (
-            <div className="mt-4 rounded-lg bg-slate-50 px-4 py-3">
-              <p className="text-sm text-slate-600">
-                {expenseChange < 0 ? (
-                  <>
-                    You spent{' '}
-                    <span className="font-semibold text-green-600">
-                      {Math.abs(expenseChange).toFixed(1)}% less
-                    </span>{' '}
-                    this month compared with last month.
-                  </>
-                ) : expenseChange > 0 ? (
-                  <>
-                    You spent{' '}
-                    <span className="font-semibold text-red-600">
-                      {expenseChange.toFixed(1)}% more
-                    </span>{' '}
-                    this month compared with last month.
-                  </>
-                ) : (
-                  <>Your spending is the same as last month.</>
-                )}
-              </p>
             </div>
           )}
         </section>

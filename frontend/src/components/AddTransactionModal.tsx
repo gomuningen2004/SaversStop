@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 import type { Account, Category } from '../types';
@@ -8,16 +8,145 @@ const API_URL = 'http://127.0.0.1:8000';
 type FormMode = 'transaction' | 'self-transfer';
 type TransactionType = 'sent' | 'received';
 
-interface AddTransactionModalProps {
+type AddTransactionModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-}
+};
 
-const inputClassName =
+type FormState = {
+  date: string;
+  amount: string;
+  type: TransactionType;
+  reason: string;
+  categoryId: string;
+  accountId: string;
+  fromAccountId: string;
+  toAccountId: string;
+};
+
+/* Shape returned by the backend (snake_case). */
+type ApiAccount = {
+  id: string;
+  name: string;
+  account_type_id: string;
+  current_balance: number | string;
+  active: boolean;
+};
+
+const MODES: { value: FormMode; label: string; submitLabel: string }[] = [
+  {
+    value: 'transaction',
+    label: 'Transaction',
+    submitLabel: 'Add Transaction',
+  },
+  {
+    value: 'self-transfer',
+    label: 'Self Transfer',
+    submitLabel: 'Add Transfer',
+  },
+];
+
+const inputClass =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100';
 
-const labelClassName = 'mb-2 block text-sm font-medium text-slate-700';
+const labelClass = 'mb-2 block text-sm font-medium text-slate-700';
+
+/* en-CA formats as YYYY-MM-DD in the *local* timezone (toISOString uses UTC). */
+const todayString = () => new Date().toLocaleDateString('en-CA');
+
+const createEmptyForm = (): FormState => ({
+  date: todayString(),
+  amount: '',
+  type: 'sent',
+  reason: '',
+  categoryId: '',
+  accountId: '',
+  fromAccountId: '',
+  toAccountId: '',
+});
+
+const capitalize = (text: string) =>
+  text.charAt(0).toUpperCase() + text.slice(1);
+
+async function getApiError(response: Response, fallback: string) {
+  try {
+    const data = await response.json();
+
+    if (typeof data.detail === 'string') {
+      return data.detail;
+    }
+
+    if (Array.isArray(data.detail)) {
+      return data.detail
+        .map((item: { msg?: string }) => item.msg)
+        .filter(Boolean)
+        .join(', ');
+    }
+  } catch {
+    // Fall through to the default message.
+  }
+
+  return fallback;
+}
+
+async function postJson(path: string, body: unknown, fallbackError: string) {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(await getApiError(response, fallbackError));
+  }
+}
+
+/* Small presentational helpers used only by this modal. */
+
+function Field({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className={className}>
+      <span className={labelClass}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function AccountSelect({
+  value,
+  accounts,
+  onChange,
+}: {
+  value: string;
+  accounts: Account[];
+  onChange: (id: string) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className={inputClass}
+      required
+    >
+      <option value="">Select account</option>
+
+      {accounts.map((account) => (
+        <option key={account.id} value={account.id}>
+          {account.name}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function AddTransactionModal({
   isOpen,
@@ -28,31 +157,23 @@ function AddTransactionModal({
   const [categories, setCategories] = useState<Category[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   const [mode, setMode] = useState<FormMode>('transaction');
+  const [form, setForm] = useState<FormState>(createEmptyForm);
 
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+    setForm((previous) => ({ ...previous, [key]: value }));
 
-  const [amount, setAmount] = useState('');
-
-  const [transactionType, setTransactionType] =
-    useState<TransactionType>('sent');
-
-  const [reason, setReason] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [accountId, setAccountId] = useState('');
-
-  const [fromAccountId, setFromAccountId] = useState('');
-  const [toAccountId, setToAccountId] = useState('');
+  /* Load accounts + categories each time the modal opens. */
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
 
-    async function loadFormData() {
+    const loadFormData = async () => {
       setLoading(true);
       setError('');
 
@@ -71,21 +192,10 @@ function AddTransactionModal({
         }
 
         const accountsData = (await accountsResponse.json()) as {
-          accounts: Array<{
-            id: string;
-            name: string;
-            account_type_id: string;
-            current_balance: number | string;
-            active: boolean;
-          }>;
+          accounts: ApiAccount[];
         };
-
         const categoriesData = (await categoriesResponse.json()) as {
-          categories: Array<{
-            id: string;
-            name: string;
-            active: boolean;
-          }>;
+          categories: Category[];
         };
 
         const activeAccounts: Account[] = accountsData.accounts
@@ -98,37 +208,27 @@ function AddTransactionModal({
             active: account.active,
           }));
 
-        const activeCategories: Category[] = categoriesData.categories.filter(
+        const activeCategories = categoriesData.categories.filter(
           (category) => category.active,
         );
 
         setAccounts(activeAccounts);
         setCategories(activeCategories);
 
-        if (activeAccounts.length > 0) {
-          setAccountId(activeAccounts[0].id);
-          setFromAccountId(activeAccounts[0].id);
-
-          if (activeAccounts.length > 1) {
-            setToAccountId(activeAccounts[1].id);
-          } else {
-            setToAccountId('');
-          }
-        } else {
-          setAccountId('');
-          setFromAccountId('');
-          setToAccountId('');
-        }
-
-        if (activeCategories.length > 0) {
-          const otherCategory = activeCategories.find(
+        /* Sensible defaults: first two accounts, "Other" category. */
+        const [firstAccount, secondAccount] = activeAccounts;
+        const defaultCategory =
+          activeCategories.find(
             (category) => category.name.toLowerCase() === 'other',
-          );
+          ) ?? activeCategories[0];
 
-          setCategoryId(otherCategory?.id ?? activeCategories[0].id);
-        } else {
-          setCategoryId('');
-        }
+        setForm((previous) => ({
+          ...previous,
+          accountId: firstAccount?.id ?? '',
+          fromAccountId: firstAccount?.id ?? '',
+          toAccountId: secondAccount?.id ?? '',
+          categoryId: defaultCategory?.id ?? '',
+        }));
       } catch (err) {
         console.error(err);
 
@@ -140,21 +240,14 @@ function AddTransactionModal({
       } finally {
         setLoading(false);
       }
-    }
+    };
 
     loadFormData();
   }, [isOpen]);
 
   const resetForm = () => {
     setMode('transaction');
-    setDate(new Date().toISOString().split('T')[0]);
-    setAmount('');
-    setTransactionType('sent');
-    setReason('');
-    setCategoryId('');
-    setAccountId('');
-    setFromAccountId('');
-    setToAccountId('');
+    setForm(createEmptyForm());
     setError('');
     setSubmitting(false);
   };
@@ -168,125 +261,86 @@ function AddTransactionModal({
     onClose();
   };
 
-  function formatCategoryName(name: string) {
-    return name.charAt(0).toUpperCase() + name.slice(1);
-  }
+  const handleModeChange = (nextMode: FormMode) => {
+    setMode(nextMode);
+    setError('');
+  };
 
-  async function getApiError(response: Response, fallbackMessage: string) {
-    try {
-      const data = await response.json();
-
-      if (typeof data.detail === 'string') {
-        return data.detail;
-      }
-
-      if (Array.isArray(data.detail)) {
-        return data.detail
-          .map((item: { msg?: string }) => item.msg)
-          .filter(Boolean)
-          .join(', ');
-      }
-    } catch {
-      // Use fallback.
+  /* Returns an error message, or null when the form is valid. */
+  const validate = (): string | null => {
+    if (!form.date) {
+      return 'Please select a date.';
     }
 
-    return fallbackMessage;
-  }
+    const amount = Number(form.amount);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return 'Please enter a valid amount.';
+    }
+
+    if (mode === 'transaction') {
+      if (!form.reason.trim()) return 'Please enter a reason.';
+      if (!form.categoryId) return 'Please select a category.';
+      if (!form.accountId) return 'Please select an account.';
+    } else {
+      if (!form.fromAccountId || !form.toAccountId) {
+        return 'Please select both accounts.';
+      }
+
+      if (form.fromAccountId === form.toAccountId) {
+        return 'From Account and To Account must be different.';
+      }
+    }
+
+    return null;
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (submitting) {
       return;
     }
 
+    const validationError = validate();
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setError('');
-
-    if (!date) {
-      setError('Please select a date.');
-      return;
-    }
-
-    const numericAmount = Number(amount);
-
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      setError('Please enter a valid amount.');
-      return;
-    }
-
-    if (mode === 'transaction') {
-      if (!reason.trim()) {
-        setError('Please enter a reason.');
-        return;
-      }
-
-      if (!categoryId) {
-        setError('Please select a category.');
-        return;
-      }
-
-      if (!accountId) {
-        setError('Please select an account.');
-        return;
-      }
-    }
-
-    if (mode === 'self-transfer') {
-      if (!fromAccountId || !toAccountId) {
-        setError('Please select both accounts.');
-        return;
-      }
-
-      if (fromAccountId === toAccountId) {
-        setError('From Account and To Account must be different.');
-        return;
-      }
-    }
-
     setSubmitting(true);
+
+    const amount = Number(form.amount);
+    const timestamp = `${form.date}T00:00:00`;
 
     try {
       if (mode === 'transaction') {
-        const response = await fetch(`${API_URL}/api/transactions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+        await postJson(
+          '/api/transactions',
+          {
+            transaction_date: timestamp,
+            reason: form.reason.trim(),
+            category_id: form.categoryId,
+            account_id: form.accountId,
+            amount,
+            type: form.type,
           },
-          body: JSON.stringify({
-            transaction_date: `${date}T00:00:00`,
-            reason: reason.trim(),
-            category_id: categoryId,
-            account_id: accountId,
-            amount: numericAmount,
-            type: transactionType,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(
-            await getApiError(response, 'Failed to add transaction.'),
-          );
-        }
+          'Failed to add transaction.',
+        );
       } else {
-        const response = await fetch(`${API_URL}/api/transfers`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            transfer_date: `${date}T00:00:00`,
-            source_account_id: fromAccountId,
-            destination_account_id: toAccountId,
-            amount: numericAmount,
+        await postJson(
+          '/api/transfers',
+          {
+            transfer_date: timestamp,
+            source_account_id: form.fromAccountId,
+            destination_account_id: form.toAccountId,
+            amount,
             reason: null,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(
-            await getApiError(response, 'Failed to add self transfer.'),
-          );
-        }
+          },
+          'Failed to add self transfer.',
+        );
       }
 
       resetForm();
@@ -300,14 +354,16 @@ function AddTransactionModal({
           ? err.message
           : 'Something went wrong. Please try again.',
       );
-
       setSubmitting(false);
     }
-  }
+  };
 
   if (!isOpen) {
     return null;
   }
+
+  const isTransfer = mode === 'self-transfer';
+  const submitLabel = MODES.find((m) => m.value === mode)!.submitLabel;
 
   return (
     <div
@@ -353,40 +409,23 @@ function AddTransactionModal({
               {/* MODE */}
 
               <div>
-                <label className={labelClassName}>
-                  What would you like to add?
-                </label>
+                <p className={labelClass}>What would you like to add?</p>
 
                 <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('transaction');
-                      setError('');
-                    }}
-                    className={`rounded-md px-4 py-2.5 text-sm font-medium transition ${
-                      mode === 'transaction'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-900'
-                    }`}
-                  >
-                    Transaction
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('self-transfer');
-                      setError('');
-                    }}
-                    className={`rounded-md px-4 py-2.5 text-sm font-medium transition ${
-                      mode === 'self-transfer'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-900'
-                    }`}
-                  >
-                    Self Transfer
-                  </button>
+                  {MODES.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handleModeChange(option.value)}
+                      className={`rounded-md px-4 py-2.5 text-sm font-medium transition ${
+                        mode === option.value
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -398,191 +437,113 @@ function AddTransactionModal({
                 </div>
               )}
 
-              {mode === 'transaction' ? (
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                  {/* DATE */}
+              {/* FIELDS */}
 
-                  <label>
-                    <span className={labelClassName}>Date</span>
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <Field
+                  label="Date"
+                  className={isTransfer ? 'sm:col-span-2' : undefined}
+                >
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={(event) => setField('date', event.target.value)}
+                    className={inputClass}
+                    required
+                  />
+                </Field>
 
-                    <input
-                      type="date"
-                      value={date}
-                      onChange={(event) => setDate(event.target.value)}
-                      className={inputClassName}
-                      required
-                    />
-                  </label>
+                {isTransfer ? (
+                  <>
+                    <Field label="From Account">
+                      <AccountSelect
+                        value={form.fromAccountId}
+                        accounts={accounts}
+                        onChange={(id) => setField('fromAccountId', id)}
+                      />
+                    </Field>
 
-                  {/* TYPE */}
+                    <Field label="To Account">
+                      <AccountSelect
+                        value={form.toAccountId}
+                        accounts={accounts}
+                        onChange={(id) => setField('toAccountId', id)}
+                      />
+                    </Field>
+                  </>
+                ) : (
+                  <>
+                    <Field label="Transaction Type">
+                      <select
+                        value={form.type}
+                        onChange={(event) =>
+                          setField(
+                            'type',
+                            event.target.value as TransactionType,
+                          )
+                        }
+                        className={inputClass}
+                      >
+                        <option value="sent">Sent</option>
+                        <option value="received">Received</option>
+                      </select>
+                    </Field>
 
-                  <label>
-                    <span className={labelClassName}>Transaction Type</span>
+                    <Field label="Reason" className="sm:col-span-2">
+                      <input
+                        type="text"
+                        value={form.reason}
+                        onChange={(event) =>
+                          setField('reason', event.target.value)
+                        }
+                        placeholder="e.g. Amazon purchase"
+                        className={inputClass}
+                        required
+                      />
+                    </Field>
 
-                    <select
-                      value={transactionType}
-                      onChange={(event) =>
-                        setTransactionType(
-                          event.target.value as TransactionType,
-                        )
-                      }
-                      className={inputClassName}
-                    >
-                      <option value="sent">Sent</option>
-                      <option value="received">Received</option>
-                    </select>
-                  </label>
+                    <Field label="Category">
+                      <select
+                        value={form.categoryId}
+                        onChange={(event) =>
+                          setField('categoryId', event.target.value)
+                        }
+                        className={inputClass}
+                        required
+                      >
+                        <option value="">Select category</option>
 
-                  {/* REASON */}
+                        {categories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {capitalize(category.name)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
 
-                  <label className="sm:col-span-2">
-                    <span className={labelClassName}>Reason</span>
+                    <Field label="Account">
+                      <AccountSelect
+                        value={form.accountId}
+                        accounts={accounts}
+                        onChange={(id) => setField('accountId', id)}
+                      />
+                    </Field>
+                  </>
+                )}
 
-                    <input
-                      type="text"
-                      value={reason}
-                      onChange={(event) => setReason(event.target.value)}
-                      placeholder="e.g. Amazon purchase"
-                      className={inputClassName}
-                      required
-                    />
-                  </label>
-
-                  {/* CATEGORY */}
-
-                  <label>
-                    <span className={labelClassName}>Category</span>
-
-                    <select
-                      value={categoryId}
-                      onChange={(event) => setCategoryId(event.target.value)}
-                      className={inputClassName}
-                      required
-                    >
-                      <option value="">Select category</option>
-
-                      {categories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {formatCategoryName(category.name)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {/* ACCOUNT */}
-
-                  <label>
-                    <span className={labelClassName}>Account</span>
-
-                    <select
-                      value={accountId}
-                      onChange={(event) => setAccountId(event.target.value)}
-                      className={inputClassName}
-                      required
-                    >
-                      <option value="">Select account</option>
-
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {/* AMOUNT */}
-
-                  <label>
-                    <span className={labelClassName}>Amount</span>
-
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={amount}
-                      onChange={(event) => setAmount(event.target.value)}
-                      placeholder="0.00"
-                      className={inputClassName}
-                      required
-                    />
-                  </label>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                  {/* DATE */}
-
-                  <label className="sm:col-span-2">
-                    <span className={labelClassName}>Date</span>
-
-                    <input
-                      type="date"
-                      value={date}
-                      onChange={(event) => setDate(event.target.value)}
-                      className={inputClassName}
-                      required
-                    />
-                  </label>
-
-                  {/* FROM */}
-
-                  <label>
-                    <span className={labelClassName}>From Account</span>
-
-                    <select
-                      value={fromAccountId}
-                      onChange={(event) => setFromAccountId(event.target.value)}
-                      className={inputClassName}
-                      required
-                    >
-                      <option value="">Select account</option>
-
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {/* TO */}
-
-                  <label>
-                    <span className={labelClassName}>To Account</span>
-
-                    <select
-                      value={toAccountId}
-                      onChange={(event) => setToAccountId(event.target.value)}
-                      className={inputClassName}
-                      required
-                    >
-                      <option value="">Select account</option>
-
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {/* AMOUNT */}
-
-                  <label>
-                    <span className={labelClassName}>Amount</span>
-
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={amount}
-                      onChange={(event) => setAmount(event.target.value)}
-                      placeholder="0.00"
-                      className={inputClassName}
-                      required
-                    />
-                  </label>
-                </div>
-              )}
+                <Field label="Amount">
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={form.amount}
+                    onChange={(event) => setField('amount', event.target.value)}
+                    placeholder="0.00"
+                    className={inputClass}
+                    required
+                  />
+                </Field>
+              </div>
             </div>
 
             {/* ACTIONS */}
@@ -602,11 +563,7 @@ function AddTransactionModal({
                 disabled={submitting}
                 className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitting
-                  ? 'Saving...'
-                  : mode === 'transaction'
-                    ? 'Add Transaction'
-                    : 'Add Transfer'}
+                {submitting ? 'Saving...' : submitLabel}
               </button>
             </div>
           </form>
