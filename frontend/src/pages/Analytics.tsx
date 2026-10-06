@@ -238,7 +238,7 @@ function Analytics() {
     }));
   }, [financialTransactions, categoryMap]);
 
-  /* Donut: top categories + one grouped "Remaining" slice */
+  /* Donut: top categories + one grouped "Misc" slice */
 
   const donutData = useMemo<CategorySpending[]>(() => {
     const top = categorySpending.slice(0, MAX_DONUT_SLICES);
@@ -251,8 +251,8 @@ function Analytics() {
     return [
       ...top,
       {
-        id: 'remaining',
-        name: 'Remaining',
+        id: 'misc',
+        name: 'Misc',
         amount: rest.reduce((sum, { amount }) => sum + amount, 0),
         percentage: rest.reduce((sum, { percentage }) => sum + percentage, 0),
         color: REMAINING_COLOR,
@@ -431,7 +431,7 @@ function Analytics() {
               {/* CATEGORY LIST */}
 
               <div className="space-y-4">
-                {categorySpending.map((category) => (
+                {donutData.map((category) => (
                   <div
                     key={category.id}
                     className="flex items-center justify-between gap-4"
