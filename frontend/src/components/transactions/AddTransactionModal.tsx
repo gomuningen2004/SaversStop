@@ -1,9 +1,8 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
+import { API_URL } from '../../api';
 import type { Account, Category } from '../../types';
-
-const API_URL = 'http://127.0.0.1:8000';
 
 type FormMode = 'transaction' | 'self-transfer';
 type TransactionType = 'sent' | 'received';

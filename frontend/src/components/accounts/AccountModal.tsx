@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 
+import { API_URL } from '../../api';
 import type {
   Account,
   AccountClassification,
   AccountType,
   AccountTypesResponse,
 } from '../../types';
-
-const API_URL = 'http://127.0.0.1:8000';
 
 interface AccountModalProps {
   isOpen: boolean;

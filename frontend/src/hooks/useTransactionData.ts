@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { API_URL } from '../api';
 import type {
   Account,
   AccountsResponse,
   Category,
   Transaction,
 } from '../types';
-
-const API_URL = 'http://127.0.0.1:8000';
 
 type RawTransaction = {
   id: string;

@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
+import { API_URL } from '../api';
 import type { Category, Transaction } from '../types';
 import type { CategoryModalMode } from '../components/categories/ManageCategoryModal';
-
-const API_URL = 'http://127.0.0.1:8000';
 
 type RawCategory = {
   id: string;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { API_URL } from '../api';
 import type {
   Account,
   AccountType,
@@ -8,8 +9,6 @@ import type {
 } from '../types';
 
 import { normalizeAccount, normalizeAccountType } from '../utils/accounts';
-
-const API_URL = 'http://127.0.0.1:8000';
 
 type UseAccountsResult = {
   accounts: Account[];

@@ -1,7 +1,10 @@
-
 import { useEffect, useMemo, useState } from 'react';
 
-import type { DebtType, ModalMode } from '../components/people/DebtPaymentModal';
+import { API_URL } from '../api';
+import type {
+  DebtType,
+  ModalMode,
+} from '../components/people/DebtPaymentModal';
 
 import type { DebtInteraction, Person } from '../types';
 
@@ -11,8 +14,6 @@ import {
   getBalanceAmount,
   getBalanceLabel,
 } from '../utils/people';
-
-const API_URL = 'http://127.0.0.1:8000';
 
 type RawPerson = {
   id: string;

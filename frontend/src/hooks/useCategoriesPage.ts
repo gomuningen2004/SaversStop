@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { API_URL } from '../api';
 import type {
   Account,
   CategoriesResponse,
@@ -41,8 +42,6 @@ export type CategoryFlow = Category & {
   moneyOut: number;
   accounts: CategoryAccountFlow[];
 };
-
-const API_URL = 'http://127.0.0.1:8000';
 
 export function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-IN', {

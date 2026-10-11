@@ -1,16 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type {
-  CategorySpending,
-} from '../components/analytics/CategorySpendingChart';
+import { API_URL } from '../api';
+import type { CategorySpending } from '../components/analytics/CategorySpendingChart';
 import type { MonthlyData } from '../components/analytics/MonthlyIncomeExpenses';
-import type {
-  Category,
-  CategoriesResponse,
-  Transaction,
-} from '../types';
+import type { Category, CategoriesResponse, Transaction } from '../types';
 
-const API_URL = 'http://127.0.0.1:8000';
 const EXCLUDED_CATEGORIES = new Set(['unknown', 'other']);
 const MAX_DONUT_SLICES = 7;
 const REMAINING_COLOR = '#cbd5e1';

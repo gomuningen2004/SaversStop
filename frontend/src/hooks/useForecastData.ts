@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { API_URL } from '../api';
 import type { ForecastMonth } from '../components/forecast/types';
 
 type ForecastResponse = {
@@ -50,7 +51,9 @@ export function useForecastData() {
         setLoading(true);
         setError(null);
 
-        const response = await fetch('/api/forecast?months=3&history_months=6');
+        const response = await fetch(
+          `${API_URL}/api/forecast?months=3&history_months=6`,
+        );
 
         if (!response.ok) {
           throw new Error(`Forecast request failed: ${response.status}`);

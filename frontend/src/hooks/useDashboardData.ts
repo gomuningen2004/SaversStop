@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 
+import { API_URL } from '../api';
 import type { Account } from '../types';
-
-const API_URL = 'http://127.0.0.1:8000';
 
 type ApiAccount = {
   id: string;

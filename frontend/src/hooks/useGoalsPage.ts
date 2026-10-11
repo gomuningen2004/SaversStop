@@ -1,7 +1,7 @@
-
 import { useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent } from 'react';
 
+import { API_URL } from '../api';
 import type { Account, Goal } from '../types';
 
 import {
@@ -9,8 +9,6 @@ import {
   formatGoalDate,
   formatGoalTargetDate,
 } from '../utils/goals';
-
-const API_URL = 'http://127.0.0.1:8000';
 
 const currency = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -642,8 +640,7 @@ export default function useGoalsPage() {
     }
   };
 
-  const getSaveEditedGoalHandler = (goal: Goal) => () =>
-    saveEditedGoal(goal);
+  const getSaveEditedGoalHandler = (goal: Goal) => () => saveEditedGoal(goal);
 
   /*
    * ---------------------------------------------------------
@@ -797,7 +794,7 @@ export default function useGoalsPage() {
    * ---------------------------------------------------------
    */
 
-    return {
+  return {
     formatAmount,
     getStatusMessage,
     formatGoalDate,
