@@ -7,8 +7,11 @@ import {
   Home,
   KeyRound,
   LockKeyhole,
+  Monitor,
+  Moon,
   PiggyBank,
   Settings2,
+  Sun,
   Tags,
   Target,
   TrendingUp,
@@ -35,31 +38,47 @@ function getInitialThemePreference(): ThemePreference {
     : 'system';
 }
 
-function ThemeSelect({
-  id,
+function ThemeButtons({
   value,
   onChange,
 }: {
-  id: string;
   value: ThemePreference;
   onChange: (value: ThemePreference) => void;
 }) {
+  const themeOptions = [
+    { value: 'system', label: 'Use system theme', Icon: Monitor },
+    { value: 'light', label: 'Light theme', Icon: Sun },
+    { value: 'dark', label: 'Dark theme', Icon: Moon },
+  ] as const;
+
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-medium text-slate-500">
-        Theme
-      </span>
-      <select
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value as ThemePreference)}
-        className="block w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-      >
-        <option value="system">Use device setting</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </select>
-    </label>
+    <div
+      className="grid grid-cols-3 gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
+      role="group"
+      aria-label="Theme preference"
+    >
+      {themeOptions.map(({ value: optionValue, label, Icon }) => {
+        const isSelected = value === optionValue;
+
+        return (
+          <button
+            key={optionValue}
+            type="button"
+            onClick={() => onChange(optionValue)}
+            aria-label={label}
+            aria-pressed={isSelected}
+            title={label}
+            className={`flex h-9 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500 ${
+              isSelected
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:bg-white/70 hover:text-slate-900'
+            }`}
+          >
+            <Icon size={17} aria-hidden="true" />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -174,29 +193,8 @@ function Navigation({ onLockNow, onSavePin }: NavigationProps) {
             <Settings2 size={16} aria-hidden="true" />
             Settings
           </div>
-          <ThemeSelect
-            id="desktop-theme-preference"
-            value={themePreference}
-            onChange={setThemePreference}
-          />
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={onLockNow}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
-            >
-              <LockKeyhole size={14} aria-hidden="true" />
-              Lock now
-            </button>
-            <button
-              type="button"
-              onClick={() => setPinModalOpen(true)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
-            >
-              <KeyRound size={14} aria-hidden="true" />
-              Change PIN
-            </button>
-          </div>
+          <p className="mb-1.5 text-xs font-medium text-slate-500">Theme</p>
+          <ThemeButtons value={themePreference} onChange={setThemePreference} />
         </div>
       </aside>
 
@@ -232,8 +230,8 @@ function Navigation({ onLockNow, onSavePin }: NavigationProps) {
               <Settings2 size={16} aria-hidden="true" />
               Settings
             </div>
-            <ThemeSelect
-              id="mobile-theme-preference"
+            <p className="mb-1.5 text-xs font-medium text-slate-500">Theme</p>
+            <ThemeButtons
               value={themePreference}
               onChange={setThemePreference}
             />

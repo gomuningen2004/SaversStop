@@ -29,7 +29,7 @@ function App() {
         className="min-h-screen bg-slate-50 text-slate-900"
       >
         {/* Top Application Bar */}
-        <AppBar />
+        <AppBar onLockNow={lockNow} onSavePin={changePin} />
 
         {/* Navigation */}
         <Navigation onLockNow={lockNow} onSavePin={changePin} />
